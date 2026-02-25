@@ -59,10 +59,8 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
 
         let msg_style = if is_selected {
             Style::default().fg(Color::White)
-        } else if session.project_exists {
-            Style::default().fg(Color::Reset)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::Reset)
         };
 
         let dim = Style::default().fg(Color::DarkGray);
