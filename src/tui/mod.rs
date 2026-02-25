@@ -192,11 +192,7 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
         app.tick_status();
         terminal.draw(|frame| {
             let height = frame.area().height.saturating_sub(2) as usize;
-            let visible = if app.mode == Mode::Detail {
-                height // 1 line per prompt in detail
-            } else {
-                height / 2 // 2 lines per session in list
-            };
+            let visible = height; // 1 line per item in both list and detail
             app.ensure_visible(visible);
             view::render(frame, &app);
         })?;

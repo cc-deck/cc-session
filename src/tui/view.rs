@@ -27,7 +27,7 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
     let width = area.width as usize;
     let height = area.height as usize;
 
-    let visible_items = height / 2;
+    let visible_items = height; // 1 line per session now
 
     let mut lines: Vec<Line> = Vec::new();
 
@@ -39,9 +39,23 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         let session = &app.sessions[idx];
         let is_selected = i == app.selected;
 
-        // Line 1: prompt text (prominent)
-        let max_msg_len = width.saturating_sub(4);
+        // Right side: "project · time_ago"
+        let delta = Utc::now().signed_duration_since(session.timestamp);
+        let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
+        let right = format!("{}  {}", session.project_name, time_ago);
+        let right_len = right.len();
+
+        // Left side: cursor + prompt text, truncated to fit
+        let cursor = if is_selected { "▸ " } else { "  " };
+        let cursor_len = 2;
+        // 2 chars gap between text and right-aligned info
+        let max_msg_len = width.saturating_sub(cursor_len + right_len + 2);
         let msg = truncate_str(&session.first_message, max_msg_len);
+        let msg_len = msg.chars().count();
+
+        // Padding to push right side to the edge
+        let pad = width.saturating_sub(cursor_len + msg_len + right_len);
+        let padding = " ".repeat(pad);
 
         let msg_style = if is_selected {
             Style::default().fg(Color::White)
@@ -51,41 +65,19 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::DarkGray)
         };
 
-        let line1 = Line::from(vec![
-            Span::styled(
-                if is_selected { "▸ " } else { "  " },
-                Style::default().fg(Color::Cyan),
-            ),
+        let dim = Style::default().fg(Color::DarkGray);
+
+        let line = Line::from(vec![
+            Span::styled(cursor, Style::default().fg(Color::Cyan)),
             Span::styled(msg, msg_style),
+            Span::raw(padding),
+            Span::styled(right, dim),
         ]);
 
-        // Line 2: project · branch · time (dimmed)
-        let branch = session.git_branch.as_deref().unwrap_or("");
-        let delta = Utc::now().signed_duration_since(session.timestamp);
-        let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
-
-        let dim = Style::default().fg(Color::DarkGray);
-        let mut line2_spans = vec![
-            Span::styled("    ", dim),
-            Span::styled(&session.project_name, dim),
-        ];
-
-        if !branch.is_empty() {
-            line2_spans.push(Span::styled(" · ", dim));
-            line2_spans.push(Span::styled(branch, dim));
-        }
-
-        line2_spans.push(Span::styled(" · ", dim));
-        line2_spans.push(Span::styled(time_ago, dim));
-
-        let line2 = Line::from(line2_spans);
-
         if is_selected {
-            lines.push(line1.patch_style(Style::default().bg(Color::Rgb(30, 30, 50))));
-            lines.push(line2.patch_style(Style::default().bg(Color::Rgb(30, 30, 50))));
+            lines.push(line.patch_style(Style::default().bg(Color::Rgb(30, 30, 50))));
         } else {
-            lines.push(line1);
-            lines.push(line2);
+            lines.push(line);
         }
     }
 
