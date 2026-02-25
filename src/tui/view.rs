@@ -39,50 +39,46 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         let session = &app.sessions[idx];
         let is_selected = i == app.selected;
 
-        // Line 1: project · branch · time
-        let branch = session.git_branch.as_deref().unwrap_or("");
-        let delta = Utc::now().signed_duration_since(session.timestamp);
-        let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
-
-        let mut line1_spans = vec![
-            Span::styled(
-                if is_selected { "▸ " } else { "  " },
-                Style::default().fg(Color::Cyan),
-            ),
-            Span::styled(
-                &session.project_name,
-                if session.project_exists {
-                    Style::default().fg(Color::Green).bold()
-                } else {
-                    Style::default().fg(Color::DarkGray).bold()
-                },
-            ),
-        ];
-
-        if !branch.is_empty() {
-            line1_spans.push(Span::raw(" · "));
-            line1_spans.push(Span::styled(branch, Style::default().fg(Color::Yellow)));
-        }
-
-        line1_spans.push(Span::raw(" · "));
-        line1_spans.push(Span::styled(time_ago, Style::default().fg(Color::DarkGray)));
-
-        let line1 = Line::from(line1_spans);
-
-        // Line 2: indented first message
-        let max_msg_len = width.saturating_sub(6);
+        // Line 1: prompt text (prominent)
+        let max_msg_len = width.saturating_sub(4);
         let msg = truncate_str(&session.first_message, max_msg_len);
 
-        let msg_style = if session.project_exists {
-            Style::default().fg(Color::Gray)
+        let msg_style = if is_selected {
+            Style::default().fg(Color::White)
+        } else if session.project_exists {
+            Style::default().fg(Color::Reset)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
-        let line2 = Line::from(vec![
-            Span::raw("    "),
-            Span::styled(format!("\"{msg}\""), msg_style),
+        let line1 = Line::from(vec![
+            Span::styled(
+                if is_selected { "▸ " } else { "  " },
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(msg, msg_style),
         ]);
+
+        // Line 2: project · branch · time (dimmed)
+        let branch = session.git_branch.as_deref().unwrap_or("");
+        let delta = Utc::now().signed_duration_since(session.timestamp);
+        let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
+
+        let dim = Style::default().fg(Color::DarkGray);
+        let mut line2_spans = vec![
+            Span::styled("    ", dim),
+            Span::styled(&session.project_name, dim),
+        ];
+
+        if !branch.is_empty() {
+            line2_spans.push(Span::styled(" · ", dim));
+            line2_spans.push(Span::styled(branch, dim));
+        }
+
+        line2_spans.push(Span::styled(" · ", dim));
+        line2_spans.push(Span::styled(time_ago, dim));
+
+        let line2 = Line::from(line2_spans);
 
         if is_selected {
             lines.push(line1.patch_style(Style::default().bg(Color::Rgb(30, 30, 50))));
