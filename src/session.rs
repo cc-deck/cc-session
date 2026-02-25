@@ -123,6 +123,42 @@ impl<'de> Deserialize<'de> for StringOrArray {
     }
 }
 
+/// Strip XML-like markup tags from a message and return cleaned text.
+///
+/// Claude Code injects tags like `<command-message>`, `<command-name>`,
+/// `<command-args>`, `<local-command-caveat>`, `<system-reminder>`, etc.
+/// These are internal markers, not user-visible content.
+pub fn clean_message(text: &str) -> String {
+    // Strip all <tag>...</tag> and self-closing <tag/> patterns
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    let mut inside_tag = false;
+
+    while let Some(c) = chars.next() {
+        if c == '<' {
+            inside_tag = true;
+        } else if c == '>' && inside_tag {
+            inside_tag = false;
+        } else if !inside_tag {
+            result.push(c);
+        }
+    }
+
+    // Clean up: trim, collapse whitespace
+    let cleaned: String = result
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    cleaned
+}
+
+/// Check if a raw message is purely internal markup (no real user content).
+pub fn is_meta_message(text: &str) -> bool {
+    let cleaned = clean_message(text);
+    cleaned.is_empty() || cleaned.len() < 3
+}
+
 /// A single user prompt extracted from a session JSONL file.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]

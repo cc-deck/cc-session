@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 
-use crate::session::{Session, SessionFileEntry, UserPrompt};
+use crate::session::{clean_message, is_meta_message, Session, SessionFileEntry, UserPrompt};
 
 /// Return the Claude home directory.
 ///
@@ -64,9 +64,19 @@ fn parse_session_file(path: &Path) -> Option<Session> {
     let file = fs::File::open(path).ok()?;
     let reader = BufReader::new(file);
 
-    // Read up to 20 lines looking for the first "user" entry
-    for line in reader.lines().take(20) {
-        let line = line.ok()?;
+    // Track metadata from the first user entry (for cwd, branch, timestamp)
+    // but keep scanning for a non-meta message to display
+    let mut cwd = String::new();
+    let mut git_branch: Option<String> = None;
+    let mut timestamp: DateTime<Utc> = Utc::now();
+    let mut first_message = String::new();
+    let mut found_metadata = false;
+
+    for line in reader.lines().take(50) {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -79,44 +89,57 @@ fn parse_session_file(path: &Path) -> Option<Session> {
             continue;
         }
 
-        // Found the first user entry
-        let cwd = entry.cwd.unwrap_or_default();
-        let git_branch = entry.git_branch;
-        let timestamp_str = entry.timestamp.unwrap_or_default();
-        let timestamp: DateTime<Utc> = timestamp_str.parse().unwrap_or_else(|_| Utc::now());
+        // Grab metadata from the first user entry
+        if !found_metadata {
+            cwd = entry.cwd.clone().unwrap_or_default();
+            git_branch = entry.git_branch.clone();
+            timestamp = entry
+                .timestamp
+                .as_deref()
+                .and_then(|t| t.parse().ok())
+                .unwrap_or_else(Utc::now);
+            found_metadata = true;
+        }
 
-        let first_message = entry.message.map(|m| m.content.text()).unwrap_or_default();
+        // Extract and clean message text
+        let raw_text = entry.message.map(|m| m.content.text()).unwrap_or_default();
+        if is_meta_message(&raw_text) {
+            continue;
+        }
 
-        // Truncate first_message to first line / reasonable length
-        let first_message = first_message
+        let cleaned = clean_message(&raw_text);
+        first_message = cleaned
             .lines()
             .next()
             .unwrap_or("")
             .chars()
             .take(200)
-            .collect::<String>();
-
-        let project_name = Path::new(&cwd)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        let project_exists = Path::new(&cwd).exists();
-
-        return Some(Session {
-            id: session_id,
-            project_path: cwd.clone(),
-            project_name,
-            git_branch,
-            timestamp,
-            first_message,
-            cwd,
-            project_exists,
-        });
+            .collect();
+        break;
     }
 
-    None
+    if !found_metadata {
+        return None;
+    }
+
+    let project_name = Path::new(&cwd)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let project_exists = Path::new(&cwd).exists();
+
+    Some(Session {
+        id: session_id,
+        project_path: cwd.clone(),
+        project_name,
+        git_branch,
+        timestamp,
+        first_message,
+        cwd,
+        project_exists,
+    })
 }
 
 /// Load the last N user prompts from a session JSONL file.
@@ -154,24 +177,23 @@ pub fn load_session_prompts(claude_home: &Path, session: &Session, max: usize) -
             continue;
         }
 
-        let text = entry
+        let raw_text = entry
             .message
-            .map(|m| {
-                let full = m.content.text();
-                // Take first line, truncate to 200 chars
-                full.lines()
-                    .next()
-                    .unwrap_or("")
-                    .chars()
-                    .take(200)
-                    .collect::<String>()
-            })
+            .map(|m| m.content.text())
             .unwrap_or_default();
 
-        // Skip meta/command messages that are empty
-        if text.is_empty() {
+        // Skip internal markup messages
+        if is_meta_message(&raw_text) {
             continue;
         }
+
+        let text: String = clean_message(&raw_text)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(200)
+            .collect();
 
         let timestamp: DateTime<Utc> = entry
             .timestamp
