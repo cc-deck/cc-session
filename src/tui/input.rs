@@ -4,9 +4,15 @@ use super::{Action, App, Mode};
 
 /// Handle a key event and return the resulting action.
 pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
+    // Ctrl-C always quits
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Action::Quit;
+    }
+
     match app.mode {
         Mode::Browsing => handle_browse(app, key),
         Mode::Filtering => handle_filter(app, key),
+        Mode::Detail => handle_detail(app, key),
     }
 }
 
@@ -16,14 +22,10 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Esc => Action::Quit,
         KeyCode::Char('j') | KeyCode::Down => {
             app.move_down();
-            // Recalculate visible items (approx, we don't know terminal height here)
-            // ensure_visible is called with a generous estimate
-            app.ensure_visible(20);
             Action::Continue
         }
         KeyCode::Char('k') | KeyCode::Up => {
             app.move_up();
-            app.ensure_visible(20);
             Action::Continue
         }
         KeyCode::Char('/') => {
@@ -33,7 +35,7 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Enter => {
             if let Some(&idx) = app.filtered_indices.get(app.selected) {
-                Action::Select(idx)
+                Action::EnterDetail(idx)
             } else {
                 Action::Continue
             }
@@ -43,11 +45,6 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
-    // Ctrl-C always quits
-    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        return Action::Quit;
-    }
-
     match key.code {
         KeyCode::Esc => {
             app.mode = Mode::Browsing;
@@ -58,7 +55,7 @@ fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Enter => {
             if let Some(&idx) = app.filtered_indices.get(app.selected) {
                 app.mode = Mode::Browsing;
-                Action::Select(idx)
+                Action::EnterDetail(idx)
             } else {
                 Action::Continue
             }
@@ -75,13 +72,35 @@ fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Down => {
             app.move_down();
-            app.ensure_visible(20);
             Action::Continue
         }
         KeyCode::Up => {
             app.move_up();
-            app.ensure_visible(20);
             Action::Continue
+        }
+        _ => Action::Continue,
+    }
+}
+
+fn handle_detail(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => Action::BackToList,
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.move_down();
+            Action::Continue
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.move_up();
+            Action::Continue
+        }
+        KeyCode::Enter => {
+            if let Some(detail) = &app.detail {
+                let session = &app.sessions[detail.session_idx];
+                let cmd = session.resume_command();
+                Action::CopyCommand(cmd)
+            } else {
+                Action::Continue
+            }
         }
         _ => Action::Continue,
     }

@@ -36,6 +36,7 @@ pub struct SessionFileEntry {
     pub timestamp: Option<String>,
     pub version: Option<String>,
     pub message: Option<MessageContent>,
+    pub uuid: Option<String>,
 }
 
 /// The message payload inside a JSONL entry.
@@ -118,6 +119,14 @@ impl<'de> Deserialize<'de> for StringOrArray {
 
         deserializer.deserialize_any(StringOrArrayVisitor)
     }
+}
+
+/// A single user prompt extracted from a session JSONL file.
+#[derive(Debug, Clone)]
+pub struct UserPrompt {
+    pub text: String,
+    pub timestamp: DateTime<Utc>,
+    pub uuid: Option<String>,
 }
 
 /// An entry for history display.

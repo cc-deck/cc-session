@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 
-use crate::session::{Session, SessionFileEntry};
+use crate::session::{Session, SessionFileEntry, UserPrompt};
 
 /// Return the Claude home directory.
 ///
@@ -122,6 +122,80 @@ fn parse_session_file(path: &Path) -> Option<Session> {
     }
 
     None
+}
+
+/// Load the last N user prompts from a session JSONL file.
+///
+/// Returns prompts in chronological order (oldest first).
+pub fn load_session_prompts(claude_home: &Path, session: &Session, max: usize) -> Vec<UserPrompt> {
+    let encoded_dir = session.project_path.replace('/', "-");
+    let file_path = claude_home
+        .join("projects")
+        .join(&encoded_dir)
+        .join(format!("{}.jsonl", session.id));
+
+    let file = match fs::File::open(&file_path) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+
+    let reader = BufReader::new(file);
+    let mut prompts: Vec<UserPrompt> = Vec::new();
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let entry: SessionFileEntry = match serde_json::from_str(&line) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        if entry.entry_type != "user" {
+            continue;
+        }
+
+        let text = entry
+            .message
+            .map(|m| {
+                let full = m.content.text();
+                // Take first line, truncate to 200 chars
+                full.lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(200)
+                    .collect::<String>()
+            })
+            .unwrap_or_default();
+
+        // Skip meta/command messages that are empty
+        if text.is_empty() {
+            continue;
+        }
+
+        let timestamp: DateTime<Utc> = entry
+            .timestamp
+            .and_then(|t| t.parse().ok())
+            .unwrap_or_else(Utc::now);
+
+        prompts.push(UserPrompt {
+            text,
+            timestamp,
+            uuid: entry.uuid,
+        });
+    }
+
+    // Keep only the last N prompts, in chronological order (oldest first)
+    let len = prompts.len();
+    if len > max {
+        prompts.drain(..len - max);
+    }
+    prompts
 }
 
 /// Apply optional time-based and count-based filters to a session list.
