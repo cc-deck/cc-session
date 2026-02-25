@@ -5,15 +5,16 @@ use std::io::stdout;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event};
+use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use crossterm::execute;
 use ratatui::prelude::*;
 
 use crate::clipboard;
 use crate::discovery::{get_claude_home, load_session_prompts};
 use crate::filter::fuzzy_filter;
+use crate::search;
 use crate::session::{Session, UserPrompt};
 
 use input::handle_input;
@@ -33,6 +34,7 @@ pub enum Action {
     EnterDetail(usize),
     CopyCommand(String),
     BackToList,
+    DeepSearch(String),
 }
 
 /// State for the detail view of a single session.
@@ -133,7 +135,11 @@ impl App {
         let claude_home = get_claude_home();
         let prompts = load_session_prompts(&claude_home, session, 20);
 
-        let selected = if prompts.is_empty() { 0 } else { prompts.len() - 1 };
+        let selected = if prompts.is_empty() {
+            0
+        } else {
+            prompts.len() - 1
+        };
         self.detail = Some(DetailState {
             session_idx,
             prompts,
@@ -204,13 +210,32 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
                     Action::EnterDetail(idx) => {
                         app.enter_detail(idx);
                     }
-                    Action::CopyCommand(cmd) => {
-                        match clipboard::copy_to_clipboard(&cmd) {
-                            Ok(()) => break,
-                            Err(_) => {
-                                deferred_command = Some(cmd);
-                                break;
-                            }
+                    Action::CopyCommand(cmd) => match clipboard::copy_to_clipboard(&cmd) {
+                        Ok(()) => break,
+                        Err(_) => {
+                            deferred_command = Some(cmd);
+                            break;
+                        }
+                    },
+                    Action::DeepSearch(pattern) => {
+                        let claude_home = get_claude_home();
+                        let results = search::deep_search(&claude_home, &pattern);
+                        if results.is_empty() {
+                            app.set_status(format!("No sessions match \"{}\"", pattern));
+                            app.mode = Mode::Browsing;
+                            app.filter_query.clear();
+                        } else {
+                            let count = results.len();
+                            app.sessions = results;
+                            app.filtered_indices = (0..app.sessions.len()).collect();
+                            app.selected = 0;
+                            app.scroll_offset = 0;
+                            app.mode = Mode::Browsing;
+                            app.filter_query.clear();
+                            app.set_status(format!(
+                                "Deep search: {} sessions match \"{}\"",
+                                count, pattern
+                            ));
                         }
                     }
                     Action::BackToList => {

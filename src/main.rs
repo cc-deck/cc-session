@@ -49,7 +49,9 @@ fn parse_duration(s: &str) -> Result<chrono::Duration, String> {
         "d" => Ok(chrono::Duration::days(num)),
         "w" => Ok(chrono::Duration::weeks(num)),
         "m" => Ok(chrono::Duration::days(num * 30)),
-        other => Err(format!("unknown duration suffix: {other:?} (expected d, w, or m)")),
+        other => Err(format!(
+            "unknown duration suffix: {other:?} (expected d, w, or m)"
+        )),
     }
 }
 
@@ -92,9 +94,10 @@ fn main() {
             eprintln!("No sessions matched grep pattern: {pattern:?}");
             std::process::exit(1);
         }
-        // For now, just print the matches
-        for s in &results {
-            println!("{}: {}", s.project_name, s.first_message);
+        // Launch TUI with deep search results
+        if let Err(e) = tui::run(results) {
+            eprintln!("TUI error: {e}");
+            std::process::exit(1);
         }
         return;
     }

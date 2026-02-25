@@ -156,7 +156,11 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
 
     let branch = session.git_branch.as_deref().unwrap_or("");
     let title = if branch.is_empty() {
-        format!(" {} - {} prompts ", session.project_name, detail.prompts.len())
+        format!(
+            " {} - {} prompts ",
+            session.project_name,
+            detail.prompts.len()
+        )
     } else {
         format!(
             " {} · {} - {} prompts ",
@@ -193,7 +197,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(match_info, Style::default().fg(Color::DarkGray)),
                 Span::raw("  "),
                 Span::styled(
-                    "Esc clear  Enter select",
+                    "Ctrl-G deep search  Esc clear  Enter select",
                     Style::default().fg(Color::DarkGray),
                 ),
             ])

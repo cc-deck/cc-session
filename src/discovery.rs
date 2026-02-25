@@ -83,14 +83,9 @@ fn parse_session_file(path: &Path) -> Option<Session> {
         let cwd = entry.cwd.unwrap_or_default();
         let git_branch = entry.git_branch;
         let timestamp_str = entry.timestamp.unwrap_or_default();
-        let timestamp: DateTime<Utc> = timestamp_str
-            .parse()
-            .unwrap_or_else(|_| Utc::now());
+        let timestamp: DateTime<Utc> = timestamp_str.parse().unwrap_or_else(|_| Utc::now());
 
-        let first_message = entry
-            .message
-            .map(|m| m.content.text())
-            .unwrap_or_default();
+        let first_message = entry.message.map(|m| m.content.text()).unwrap_or_default();
 
         // Truncate first_message to first line / reasonable length
         let first_message = first_message

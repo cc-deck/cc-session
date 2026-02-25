@@ -11,6 +11,7 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
 }
 
 /// Check whether clipboard access is available on this system.
+#[allow(dead_code)]
 pub fn clipboard_available() -> bool {
     Clipboard::new().is_ok()
 }

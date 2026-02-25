@@ -25,6 +25,7 @@ impl Session {
 
 /// A single line from a session JSONL file.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct SessionFileEntry {
     #[serde(rename = "type")]
     pub entry_type: String,
@@ -41,6 +42,7 @@ pub struct SessionFileEntry {
 
 /// The message payload inside a JSONL entry.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct MessageContent {
     pub role: String,
     pub content: StringOrArray,
@@ -123,6 +125,7 @@ impl<'de> Deserialize<'de> for StringOrArray {
 
 /// A single user prompt extracted from a session JSONL file.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct UserPrompt {
     pub text: String,
     pub timestamp: DateTime<Utc>,
@@ -131,6 +134,7 @@ pub struct UserPrompt {
 
 /// An entry for history display.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct HistoryEntry {
     pub display: String,
     pub timestamp: i64,

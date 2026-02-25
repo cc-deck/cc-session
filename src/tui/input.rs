@@ -45,6 +45,14 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
+    // Ctrl-G: deep search
+    if key.code == KeyCode::Char('g') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        if !app.filter_query.is_empty() {
+            return Action::DeepSearch(app.filter_query.clone());
+        }
+        return Action::Continue;
+    }
+
     match key.code {
         KeyCode::Esc => {
             app.mode = Mode::Browsing;

@@ -19,7 +19,10 @@ pub fn fuzzy_filter(sessions: &[Session], query: &str) -> Vec<(usize, u32)> {
         .enumerate()
         .filter_map(|(idx, session)| {
             let branch = session.git_branch.as_deref().unwrap_or("");
-            let haystack = format!("{} {} {}", session.project_name, branch, session.first_message);
+            let haystack = format!(
+                "{} {} {}",
+                session.project_name, branch, session.first_message
+            );
             let score = pattern.score(Utf32Str::new(&haystack, &mut buf), &mut matcher)?;
             Some((idx, score))
         })
