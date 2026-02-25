@@ -210,14 +210,10 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Action::CopyCommand(cmd) => {
                         match clipboard::copy_to_clipboard(&cmd) {
-                            Ok(()) => {
-                                app.set_status("Copied to clipboard!".to_string());
-                            }
+                            Ok(()) => break,
                             Err(_) => {
                                 deferred_command = Some(cmd);
-                                app.set_status(
-                                    "Clipboard unavailable, will print on exit".to_string(),
-                                );
+                                break;
                             }
                         }
                     }
