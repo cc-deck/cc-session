@@ -41,7 +41,6 @@ pub enum Action {
 pub struct DetailState {
     pub session_idx: usize,
     pub prompts: Vec<UserPrompt>,
-    pub selected: usize,
     pub scroll_offset: usize,
 }
 
@@ -86,24 +85,14 @@ impl App {
 
     /// Move the selection cursor down, clamped to bounds.
     pub fn move_down(&mut self) {
-        let len = match &self.detail {
-            Some(d) => d.prompts.len(),
-            None => self.filtered_indices.len(),
-        };
-        if len > 0 {
-            match &mut self.detail {
-                Some(d) => d.selected = (d.selected + 1).min(len - 1),
-                None => self.selected = (self.selected + 1).min(len - 1),
-            }
+        if !self.filtered_indices.is_empty() {
+            self.selected = (self.selected + 1).min(self.filtered_indices.len() - 1);
         }
     }
 
     /// Move the selection cursor up, clamped to bounds.
     pub fn move_up(&mut self) {
-        match &mut self.detail {
-            Some(d) => d.selected = d.selected.saturating_sub(1),
-            None => self.selected = self.selected.saturating_sub(1),
-        }
+        self.selected = self.selected.saturating_sub(1);
     }
 
     /// Ensure the selected item is visible by adjusting scroll_offset.
@@ -111,20 +100,19 @@ impl App {
         if visible_items == 0 {
             return;
         }
-        match &mut self.detail {
-            Some(d) => {
-                if d.selected < d.scroll_offset {
-                    d.scroll_offset = d.selected;
-                } else if d.selected >= d.scroll_offset + visible_items {
-                    d.scroll_offset = d.selected - visible_items + 1;
+        if self.mode == Mode::Detail {
+            // Detail view: scroll to show the bottom (newest prompts)
+            if let Some(d) = &mut self.detail {
+                let total = d.prompts.len();
+                if total > visible_items {
+                    d.scroll_offset = total - visible_items;
                 }
             }
-            None => {
-                if self.selected < self.scroll_offset {
-                    self.scroll_offset = self.selected;
-                } else if self.selected >= self.scroll_offset + visible_items {
-                    self.scroll_offset = self.selected - visible_items + 1;
-                }
+        } else {
+            if self.selected < self.scroll_offset {
+                self.scroll_offset = self.selected;
+            } else if self.selected >= self.scroll_offset + visible_items {
+                self.scroll_offset = self.selected - visible_items + 1;
             }
         }
     }
@@ -135,15 +123,9 @@ impl App {
         let claude_home = get_claude_home();
         let prompts = load_session_prompts(&claude_home, session, 20);
 
-        let selected = if prompts.is_empty() {
-            0
-        } else {
-            prompts.len() - 1
-        };
         self.detail = Some(DetailState {
             session_idx,
             prompts,
-            selected,
             scroll_offset: 0,
         });
         self.mode = Mode::Detail;

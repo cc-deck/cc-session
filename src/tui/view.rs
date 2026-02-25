@@ -117,38 +117,24 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
 
         for i in start..end {
             let prompt = &detail.prompts[i];
-            let is_selected = i == detail.selected;
 
             let delta = Utc::now().signed_duration_since(prompt.timestamp);
             let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
 
-            let max_text_len = width.saturating_sub(4);
+            let max_text_len = width.saturating_sub(20);
             let text = truncate_str(&prompt.text, max_text_len);
 
-            let cursor = if is_selected { "▸ " } else { "  " };
-
             let line = Line::from(vec![
-                Span::styled(cursor, Style::default().fg(Color::Cyan)),
+                Span::styled("  ", Style::default()),
                 Span::styled(
                     format!("{:>14}", time_ago),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled("  ", Style::default()),
-                Span::styled(
-                    text,
-                    if is_selected {
-                        Style::default().fg(Color::White)
-                    } else {
-                        Style::default().fg(Color::Gray)
-                    },
-                ),
+                Span::styled(text, Style::default().fg(Color::Reset)),
             ]);
 
-            if is_selected {
-                lines.push(line.patch_style(Style::default().bg(Color::Rgb(30, 30, 50))));
-            } else {
-                lines.push(line);
-            }
+            lines.push(line);
         }
     }
 

@@ -90,17 +90,9 @@ fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-fn handle_detail(app: &mut App, key: KeyEvent) -> Action {
+fn handle_detail(app: &App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => Action::BackToList,
-        KeyCode::Char('j') | KeyCode::Down => {
-            app.move_down();
-            Action::Continue
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            app.move_up();
-            Action::Continue
-        }
         KeyCode::Enter => {
             if let Some(detail) = &app.detail {
                 let session = &app.sessions[detail.session_idx];
