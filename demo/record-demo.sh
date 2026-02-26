@@ -69,14 +69,11 @@ sleep 1
 
 # Select first match (Enter opens detail view)
 tmux send-keys -t "$TMUX_SESSION" Enter
-sleep 1.5
+sleep 2.5
 
 # Copy and exit (Enter on "Copy to clipboard & Exit")
 tmux send-keys -t "$TMUX_SESSION" Enter
-sleep 1
-
-# The TUI has exited, show the copied command
-sleep 0.5
+sleep 0.3
 
 # Exit the recording shell
 tmux send-keys -t "$TMUX_SESSION" exit Enter 2>/dev/null || true
