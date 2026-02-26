@@ -30,6 +30,23 @@ BIN="$PROJECT_DIR/target/release/cc-session"
 echo "Generating demo fixtures..."
 bash "$SCRIPT_DIR/create-fixtures.sh" "$FIXTURE_DIR" > /dev/null
 
+# Create the inner script that asciinema will record
+INNER_SCRIPT=$(mktemp)
+cat > "$INNER_SCRIPT" <<'INNER'
+#!/usr/bin/env bash
+# This script is what asciinema records.
+# It shows a clean prompt, runs cc-session, then pastes the result.
+export PS1='\[\033[1;32m\]$ \[\033[0m\]'
+exec bash --norc --noprofile -i
+INNER
+chmod +x "$INNER_SCRIPT"
+
+# Create a bashrc that sets the prompt
+DEMO_BASHRC=$(mktemp)
+cat > "$DEMO_BASHRC" <<'BASHRC'
+PS1='\[\033[1;32m\]$ \[\033[0m\]'
+BASHRC
+
 # Clean up previous recording
 rm -f "$CAST_FILE"
 
@@ -41,15 +58,17 @@ tmux new-session -d -s "$TMUX_SESSION" -x "$COLS" -y "$ROWS"
 
 echo "Recording demo..."
 
-# Start asciinema recording a shell session (not a single command)
+# Start asciinema recording with a clean bash shell
 tmux send-keys -t "$TMUX_SESSION" \
-  "asciinema rec --cols $COLS --rows $ROWS --overwrite '$CAST_FILE'" Enter
+  "asciinema rec --cols $COLS --rows $ROWS --overwrite '$CAST_FILE' -c 'bash --rcfile $DEMO_BASHRC --noprofile -i'" Enter
 
-sleep 1
+sleep 1.5
 
-# Clear the screen and run cc-session
+# Clear screen for a fresh start
 tmux send-keys -t "$TMUX_SESSION" "clear" Enter
 sleep 0.5
+
+# Run cc-session
 tmux send-keys -t "$TMUX_SESSION" "CLAUDE_HOME=$FIXTURE_DIR $BIN" Enter
 sleep 2
 
@@ -81,19 +100,17 @@ sleep 2.5
 tmux send-keys -t "$TMUX_SESSION" Enter
 sleep 1
 
-# TUI has exited, we're back in the recorded shell.
-# Paste the clipboard content to show what was copied.
-sleep 0.8
+# Back at the shell prompt. Paste the clipboard content.
 tmux send-keys -t "$TMUX_SESSION" "pbpaste" Enter
 sleep 6
 
-# Exit the asciinema recording
+# Exit the recorded shell (ends asciinema recording)
 tmux send-keys -t "$TMUX_SESSION" "exit" Enter
 sleep 1
 
 # Clean up
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-rm -rf "$FIXTURE_DIR"
+rm -rf "$FIXTURE_DIR" "$INNER_SCRIPT" "$DEMO_BASHRC"
 
 if [ -f "$CAST_FILE" ]; then
   echo "Recording saved to $CAST_FILE"
