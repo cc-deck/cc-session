@@ -9,16 +9,19 @@ use super::{App, Mode};
 pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
+    if app.mode == Mode::Detail {
+        // Detail view has its own layout (no shared status bar)
+        render_detail(frame, app, area);
+        return;
+    }
+
     // Layout: main area + bottom status bar (1 line)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(area);
 
-    match app.mode {
-        Mode::Detail => render_detail(frame, app, chunks[0]),
-        _ => render_session_list(frame, app, chunks[0]),
-    }
+    render_session_list(frame, app, chunks[0]);
     render_status_bar(frame, app, chunks[1]);
 }
 
@@ -101,19 +104,30 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let session = &app.sessions[detail.session_idx];
-    let width = area.width as usize;
-    let height = area.height.saturating_sub(1) as usize; // -1 for title line
+
+    // Layout: bordered prompt list + button area (4 lines)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(4)])
+        .split(area);
+
+    let list_area = chunks[0];
+    let button_area = chunks[1];
+
+    // -- Bordered prompt list --
+    let inner_width = list_area.width.saturating_sub(4) as usize; // 2 for border + 2 padding
+    let inner_height = list_area.height.saturating_sub(2) as usize; // 2 for top/bottom border
 
     let mut lines: Vec<Line> = Vec::new();
 
     if detail.prompts.is_empty() {
         lines.push(Line::from(Span::styled(
-            "  No user prompts found in this session.",
+            " No user prompts found in this session.",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
         let start = detail.scroll_offset;
-        let end = (start + height).min(detail.prompts.len());
+        let end = (start + inner_height).min(detail.prompts.len());
 
         for i in start..end {
             let prompt = &detail.prompts[i];
@@ -121,16 +135,14 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
             let delta = Utc::now().signed_duration_since(prompt.timestamp);
             let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
 
-            let max_text_len = width.saturating_sub(20);
+            let max_text_len = inner_width.saturating_sub(18);
             let text = truncate_str(&prompt.text, max_text_len);
 
             let line = Line::from(vec![
-                Span::styled("  ", Style::default()),
                 Span::styled(
-                    format!("{:>14}", time_ago),
+                    format!(" {:>14}  ", time_ago),
                     Style::default().fg(Color::DarkGray),
                 ),
-                Span::styled("  ", Style::default()),
                 Span::styled(text, Style::default().fg(Color::Reset)),
             ]);
 
@@ -141,27 +153,46 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
     let branch = session.git_branch.as_deref().unwrap_or("");
     let title = if branch.is_empty() {
         format!(
-            " {} - {} prompts ",
+            " {} ({} prompts) ",
             session.project_name,
             detail.prompts.len()
         )
     } else {
         format!(
-            " {} · {} - {} prompts ",
+            " {} · {} ({} prompts) ",
             session.project_name,
             branch,
             detail.prompts.len()
         )
     };
 
-    let text = Text::from(lines);
-    let block = Block::default()
-        .borders(Borders::NONE)
+    let prompt_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray))
         .title(title)
         .title_style(Style::default().fg(Color::Green).bold());
 
-    let paragraph = Paragraph::new(text).block(block);
-    frame.render_widget(paragraph, area);
+    let prompt_list = Paragraph::new(Text::from(lines)).block(prompt_block);
+    frame.render_widget(prompt_list, list_area);
+
+    // -- Buttons --
+    let dim = Style::default().fg(Color::DarkGray);
+    let button_lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("   Copy to clipboard & Exit", Style::default().fg(Color::Cyan).bold()),
+            Span::styled("          ", Style::default()),
+            Span::styled("Back", Style::default().fg(Color::Reset)),
+        ]),
+        Line::from(vec![
+            Span::styled("   Enter", dim),
+            Span::styled("                            ", Style::default()),
+            Span::styled("Esc", dim),
+        ]),
+    ];
+
+    let buttons = Paragraph::new(Text::from(button_lines));
+    frame.render_widget(buttons, button_area);
 }
 
 /// Render the status/help bar at the bottom.
@@ -186,22 +217,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ])
         }
-        Mode::Detail => {
-            if let Some((msg, _)) = &app.status_message {
-                Line::from(vec![Span::styled(
-                    format!(" {msg}"),
-                    Style::default().fg(Color::Green).bold(),
-                )])
-            } else {
-                Line::from(vec![
-                    Span::styled(" Enter ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("copy", Style::default().fg(Color::DarkGray)),
-                    Span::raw("  "),
-                    Span::styled("Esc ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("back", Style::default().fg(Color::DarkGray)),
-                ])
-            }
-        }
+        Mode::Detail => Line::from(""), // handled by render_detail
         Mode::Browsing => {
             if let Some((msg, _)) = &app.status_message {
                 Line::from(vec![Span::styled(
