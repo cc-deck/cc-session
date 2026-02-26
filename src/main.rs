@@ -4,6 +4,7 @@ mod filter;
 mod scriptable;
 mod search;
 mod session;
+mod shell_setup;
 mod tui;
 
 use clap::Parser;
@@ -33,6 +34,14 @@ struct Cli {
     /// Quick mode: print the top match directly (no menu, no clipboard). Use with -s or -g.
     #[arg(short = 'q', long = "quick")]
     quick: bool,
+
+    /// Print shell function definitions, or install them with --install
+    #[arg(long = "shell-setup")]
+    shell_setup: bool,
+
+    /// When used with --shell-setup, append functions to your shell rc file
+    #[arg(long = "install", requires = "shell_setup")]
+    install: bool,
 }
 
 /// Parse a human-friendly duration string into a chrono::Duration.
@@ -61,6 +70,16 @@ fn parse_duration(s: &str) -> Result<chrono::Duration, String> {
 
 fn main() {
     let cli = Cli::parse();
+
+    // Handle --shell-setup before anything else
+    if cli.shell_setup {
+        if cli.install {
+            shell_setup::install();
+        } else {
+            shell_setup::print_definitions();
+        }
+        return;
+    }
 
     let claude_home = get_claude_home();
     let projects_dir = claude_home.join("projects");

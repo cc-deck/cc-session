@@ -18,8 +18,12 @@ pub struct Session {
 
 impl Session {
     /// Build the shell command to resume this session.
+    ///
+    /// The path is single-quoted to handle spaces and special characters.
     pub fn resume_command(&self) -> String {
-        format!("cd {} && claude -r {}", self.cwd, self.id)
+        // Single-quote the path, escaping any embedded single quotes
+        let escaped_cwd = self.cwd.replace('\'', "'\\''");
+        format!("cd '{}' && claude -r {}", escaped_cwd, self.id)
     }
 }
 
