@@ -46,8 +46,33 @@ create_session "/home/dev/projects/api-gateway" "a1b2c3d4-1111-4000-8000-0000000
   "Debug the 504 timeout errors on the health endpoint" "$(h 72)"
 
 # Project 2: auth-service (3 sessions)
-create_session "/home/dev/projects/auth-service" "b2c3d4e5-2222-4000-8000-000000000001" "main" \
-  "Implement JWT token refresh with sliding expiration" "$(h 1)"
+# The main session gets a realistic multi-prompt conversation (shown in detail view)
+AUTH_DIR="$FIXTURE_DIR/projects/-home-dev-projects-auth-service"
+mkdir -p "$AUTH_DIR"
+AUTH_ID="b2c3d4e5-2222-4000-8000-000000000001"
+cat > "$AUTH_DIR/$AUTH_ID.jsonl" <<JSONL
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","version":"2.1.56","message":{"role":"user","content":"Implement JWT token refresh with sliding expiration"},"uuid":"msg-001"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"I'll implement the JWT refresh flow. Let me start with the token service."}]},"uuid":"msg-002"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"The refresh token should be stored in an HTTP-only cookie, not localStorage"},"uuid":"msg-003"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"Good point. I'll update the implementation to use HTTP-only cookies."}]},"uuid":"msg-004"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"Can you add token rotation? Each refresh should invalidate the old token"},"uuid":"msg-005"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"I'll add a token family tracking mechanism for rotation."}]},"uuid":"msg-006"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"What about the race condition when multiple tabs refresh at the same time?"},"uuid":"msg-007"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"We can add a grace period for the old token after rotation."}]},"uuid":"msg-008"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"Add rate limiting to the refresh endpoint, max 10 refreshes per minute per user"},"uuid":"msg-009"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"Done. I've added a sliding window rate limiter."}]},"uuid":"msg-010"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"The tests are failing because the mock clock isn't advancing, can you fix that?"},"uuid":"msg-011"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"I see the issue. The test clock needs to be injected via the constructor."}]},"uuid":"msg-012"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"Please also add a /revoke endpoint that invalidates all tokens for a user"},"uuid":"msg-013"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"I'll add the revoke endpoint with proper cascade invalidation."}]},"uuid":"msg-014"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"Let's write integration tests for the full refresh flow including cookie handling"},"uuid":"msg-015"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"I'll create a test suite that exercises the complete lifecycle."}]},"uuid":"msg-016"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"Can we also log token refresh events for the audit trail?"},"uuid":"msg-017"}
+{"type":"assistant","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"assistant","content":[{"type":"text","text":"Added structured logging for all token lifecycle events."}]},"uuid":"msg-018"}
+{"type":"user","sessionId":"$AUTH_ID","cwd":"/home/dev/projects/auth-service","gitBranch":"main","timestamp":"$(h 1)","message":{"role":"user","content":"One more thing: add a config option to set the refresh token TTL, default 30 days"},"uuid":"msg-019"}
+JSONL
+echo "  Created session: auth-service / main (10 prompts)"
+
 create_session "/home/dev/projects/auth-service" "b2c3d4e5-2222-4000-8000-000000000002" "feat-oauth" \
   "Add GitHub OAuth2 provider for social login" "$(h 48)"
 create_session "/home/dev/projects/auth-service" "b2c3d4e5-2222-4000-8000-000000000003" "fix-session" \
