@@ -6,44 +6,52 @@ use chrono_humanize::{Accuracy, HumanTime, Tense};
 use crate::filter::fuzzy_filter;
 use crate::session::Session;
 
-/// Run the scriptable selection mode.
+/// Run the scriptable selection mode with fuzzy filtering.
 ///
 /// Returns an exit code (0 = success, 1 = no match).
 pub fn run_scriptable(sessions: &[Session], query: &str) -> i32 {
-    let matches = if query.is_empty() {
-        // No query: use all sessions
-        (0..sessions.len()).collect::<Vec<_>>()
+    let matches: Vec<&Session> = if query.is_empty() {
+        sessions.iter().collect()
     } else {
         fuzzy_filter(sessions, query)
             .into_iter()
-            .map(|(idx, _)| idx)
+            .map(|(idx, _)| &sessions[idx])
             .collect()
     };
 
-    if matches.is_empty() {
-        eprintln!("No sessions found matching \"{query}\"");
+    present_selection(&matches, query)
+}
+
+/// Run the scriptable selection mode with pre-filtered results (e.g. from deep search).
+///
+/// Returns an exit code (0 = success, 1 = no match).
+pub fn run_scriptable_prefiltered(sessions: &[Session], label: &str) -> i32 {
+    let refs: Vec<&Session> = sessions.iter().collect();
+    present_selection(&refs, label)
+}
+
+/// Shared selection logic: single match prints command, multiple shows menu.
+fn present_selection(sessions: &[&Session], label: &str) -> i32 {
+    if sessions.is_empty() {
+        eprintln!("No sessions found matching \"{label}\"");
         return 1;
     }
 
-    if matches.len() == 1 {
-        let session = &sessions[matches[0]];
-        println!("{}", session.resume_command());
+    if sessions.len() == 1 {
+        println!("{}", sessions[0].resume_command());
         return 0;
     }
 
-    // Multiple matches: show slim selection menu
-    let total = matches.len();
+    let total = sessions.len();
     let display_count = total.min(10);
-    let showing_all = total <= 10;
 
-    if showing_all {
-        eprintln!("  {total} sessions match \"{query}\":\n");
+    if total <= 10 {
+        eprintln!("  {total} sessions match \"{label}\":\n");
     } else {
-        eprintln!("  {total} sessions match \"{query}\" (showing top 10):\n");
+        eprintln!("  {total} sessions match \"{label}\" (showing top 10):\n");
     }
 
-    for (i, &idx) in matches.iter().take(display_count).enumerate() {
-        let session = &sessions[idx];
+    for (i, session) in sessions.iter().take(display_count).enumerate() {
         render_menu_entry(i + 1, session);
     }
 
@@ -51,8 +59,7 @@ pub fn run_scriptable(sessions: &[Session], query: &str) -> i32 {
     io::stderr().flush().ok();
 
     if let Some(choice) = read_selection(display_count) {
-        let session = &sessions[matches[choice - 1]];
-        println!("{}", session.resume_command());
+        println!("{}", sessions[choice - 1].resume_command());
         0
     } else {
         eprintln!("Invalid selection");

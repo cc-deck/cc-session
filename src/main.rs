@@ -90,16 +90,8 @@ fn main() {
 
     if let Some(pattern) = cli.grep {
         let results = search::deep_search(&claude_home, &pattern);
-        if results.is_empty() {
-            eprintln!("No sessions matched grep pattern: {pattern:?}");
-            std::process::exit(1);
-        }
-        // Launch TUI with deep search results
-        if let Err(e) = tui::run(results) {
-            eprintln!("TUI error: {e}");
-            std::process::exit(1);
-        }
-        return;
+        let code = scriptable::run_scriptable_prefiltered(&results, &pattern);
+        std::process::exit(code);
     }
 
     // Default: interactive TUI

@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use regex::Regex;
 
-use crate::session::{Session, SessionFileEntry};
+use crate::session::{clean_message, Session, SessionFileEntry};
 
 /// Search through all session JSONL files for lines matching `pattern`.
 ///
@@ -109,8 +109,9 @@ fn search_file(path: &Path, re: &Regex) -> Option<Session> {
     let first_message = entry
         .message
         .map(|m| {
-            let full = m.content.text();
-            full.lines()
+            let raw = m.content.text();
+            clean_message(&raw)
+                .lines()
                 .next()
                 .unwrap_or("")
                 .chars()
