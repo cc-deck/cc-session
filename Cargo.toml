@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.80.0"
 description = "Fast CLI tool for finding and resuming Claude Code sessions"
+license = "MIT"
+repository = "https://github.com/rhuss/cc-session"
+readme = "README.md"
+keywords = ["claude", "cli", "tui", "session"]
+categories = ["command-line-utilities"]
+homepage = "https://github.com/rhuss/cc-session"
 
 [dependencies]
 ratatui = "0.30"
@@ -22,3 +28,8 @@ regex = "1"
 [profile.release]
 lto = true
 strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

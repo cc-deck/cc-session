@@ -7,3 +7,6 @@
 .env*
 *.tmp
 *.swp
+
+# Demo generated files (scripts are tracked, outputs are not)
+demo/demo.cast
