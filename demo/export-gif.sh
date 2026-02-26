@@ -25,8 +25,10 @@ fi
 echo "Converting recording to GIF..."
 agg \
   --font-size 14 \
-  --speed 1.2 \
+  --speed 1 \
+  --fps-cap 4 \
   --theme monokai \
+  --idle-time-limit 3 \
   "$CAST_FILE" "$GIF_FILE"
 
 # Copy to docs/ for README embedding

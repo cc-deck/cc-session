@@ -41,10 +41,16 @@ tmux new-session -d -s "$TMUX_SESSION" -x "$COLS" -y "$ROWS"
 
 echo "Recording demo..."
 
-# Start asciinema recording inside tmux
+# Start asciinema recording a shell session (not a single command)
 tmux send-keys -t "$TMUX_SESSION" \
-  "asciinema rec --cols $COLS --rows $ROWS --overwrite '$CAST_FILE' -c 'CLAUDE_HOME=$FIXTURE_DIR $BIN'" Enter
+  "asciinema rec --cols $COLS --rows $ROWS --overwrite '$CAST_FILE'" Enter
 
+sleep 1
+
+# Clear the screen and run cc-session
+tmux send-keys -t "$TMUX_SESSION" "clear" Enter
+sleep 0.5
+tmux send-keys -t "$TMUX_SESSION" "CLAUDE_HOME=$FIXTURE_DIR $BIN" Enter
 sleep 2
 
 # Scroll down slowly
@@ -73,10 +79,16 @@ sleep 2.5
 
 # Copy and exit (Enter on "Copy to clipboard & Exit")
 tmux send-keys -t "$TMUX_SESSION" Enter
-sleep 0.3
+sleep 1
 
-# Exit the recording shell
-tmux send-keys -t "$TMUX_SESSION" exit Enter 2>/dev/null || true
+# TUI has exited, we're back in the recorded shell.
+# Paste the clipboard content to show what was copied.
+sleep 0.8
+tmux send-keys -t "$TMUX_SESSION" "pbpaste" Enter
+sleep 6
+
+# Exit the asciinema recording
+tmux send-keys -t "$TMUX_SESSION" "exit" Enter
 sleep 1
 
 # Clean up
