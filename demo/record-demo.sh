@@ -5,7 +5,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CAST_FILE="$SCRIPT_DIR/demo.cast"
 FIXTURE_DIR=$(mktemp -d)
 TMUX_SESSION="cc-session-demo"
@@ -13,38 +12,25 @@ COLS=100
 ROWS=28
 
 # Check prerequisites
-for cmd in asciinema tmux; do
+for cmd in asciinema tmux cc-session; do
   if ! command -v "$cmd" &>/dev/null; then
     echo "Error: $cmd is not installed."
-    echo "Install with: brew install $cmd"
+    [ "$cmd" = "cc-session" ] && echo "Install with: brew install rhuss/tap/cc-session"
+    [ "$cmd" = "asciinema" ] && echo "Install with: brew install asciinema"
+    [ "$cmd" = "tmux" ] && echo "Install with: brew install tmux"
     exit 1
   fi
 done
-
-# Build release binary
-echo "Building cc-session..."
-cargo build --release --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null
-BIN="$PROJECT_DIR/target/release/cc-session"
 
 # Generate fixtures
 echo "Generating demo fixtures..."
 bash "$SCRIPT_DIR/create-fixtures.sh" "$FIXTURE_DIR" > /dev/null
 
-# Create the inner script that asciinema will record
-INNER_SCRIPT=$(mktemp)
-cat > "$INNER_SCRIPT" <<'INNER'
-#!/usr/bin/env bash
-# This script is what asciinema records.
-# It shows a clean prompt, runs cc-session, then pastes the result.
-export PS1='\[\033[1;32m\]$ \[\033[0m\]'
-exec bash --norc --noprofile -i
-INNER
-chmod +x "$INNER_SCRIPT"
-
-# Create a bashrc that sets the prompt
+# Create a bashrc with clean colored prompt and CLAUDE_HOME set
 DEMO_BASHRC=$(mktemp)
-cat > "$DEMO_BASHRC" <<'BASHRC'
-PS1='\[\033[1;32m\]$ \[\033[0m\]'
+cat > "$DEMO_BASHRC" <<BASHRC
+PS1='\[\033[1;32m\]\$ \[\033[0m\]'
+export CLAUDE_HOME=$FIXTURE_DIR
 BASHRC
 
 # Clean up previous recording
@@ -68,8 +54,8 @@ sleep 1.5
 tmux send-keys -t "$TMUX_SESSION" "clear" Enter
 sleep 0.5
 
-# Run cc-session
-tmux send-keys -t "$TMUX_SESSION" "CLAUDE_HOME=$FIXTURE_DIR $BIN" Enter
+# Run cc-session (installed via brew, CLAUDE_HOME set in bashrc)
+tmux send-keys -t "$TMUX_SESSION" "cc-session" Enter
 sleep 2
 
 # Scroll down slowly
@@ -100,17 +86,23 @@ sleep 2.5
 tmux send-keys -t "$TMUX_SESSION" Enter
 sleep 1
 
-# Back at the shell prompt. Paste the clipboard content.
-tmux send-keys -t "$TMUX_SESSION" "pbpaste" Enter
+# Back at the shell prompt. Simulate Cmd-V paste by injecting clipboard content.
+# tmux paste-buffer looks identical to a user pressing Cmd-V.
+tmux set-buffer -b demo "$(pbpaste)" 2>/dev/null
+tmux send-keys -t "$TMUX_SESSION" ""  # ensure prompt is ready
+sleep 0.3
+tmux paste-buffer -t "$TMUX_SESSION" -b demo 2>/dev/null
 sleep 6
 
 # Exit the recorded shell (ends asciinema recording)
+tmux send-keys -t "$TMUX_SESSION" C-c  # cancel the pasted line
+sleep 0.3
 tmux send-keys -t "$TMUX_SESSION" "exit" Enter
 sleep 1
 
 # Clean up
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-rm -rf "$FIXTURE_DIR" "$INNER_SCRIPT" "$DEMO_BASHRC"
+rm -rf "$FIXTURE_DIR" "$DEMO_BASHRC"
 
 if [ -f "$CAST_FILE" ]; then
   echo "Recording saved to $CAST_FILE"
