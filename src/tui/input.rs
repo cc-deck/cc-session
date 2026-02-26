@@ -90,14 +90,30 @@ fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-fn handle_detail(app: &App, key: KeyEvent) -> Action {
+fn handle_detail(app: &mut App, key: KeyEvent) -> Action {
+    use super::DetailButton;
+
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => Action::BackToList,
+        KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => {
+            if let Some(detail) = &mut app.detail {
+                detail.focused_button = match detail.focused_button {
+                    DetailButton::CopyAndExit => DetailButton::Back,
+                    DetailButton::Back => DetailButton::CopyAndExit,
+                };
+            }
+            Action::Continue
+        }
         KeyCode::Enter => {
             if let Some(detail) = &app.detail {
-                let session = &app.sessions[detail.session_idx];
-                let cmd = session.resume_command();
-                Action::CopyCommand(cmd)
+                match detail.focused_button {
+                    DetailButton::CopyAndExit => {
+                        let session = &app.sessions[detail.session_idx];
+                        let cmd = session.resume_command();
+                        Action::CopyCommand(cmd)
+                    }
+                    DetailButton::Back => Action::BackToList,
+                }
             } else {
                 Action::Continue
             }

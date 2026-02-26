@@ -37,11 +37,19 @@ pub enum Action {
     DeepSearch(String),
 }
 
+/// Which button is focused in the detail view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailButton {
+    CopyAndExit,
+    Back,
+}
+
 /// State for the detail view of a single session.
 pub struct DetailState {
     pub session_idx: usize,
     pub prompts: Vec<UserPrompt>,
     pub scroll_offset: usize,
+    pub focused_button: DetailButton,
 }
 
 /// Application state for the TUI.
@@ -127,6 +135,7 @@ impl App {
             session_idx,
             prompts,
             scroll_offset: 0,
+            focused_button: DetailButton::CopyAndExit,
         });
         self.mode = Mode::Detail;
     }

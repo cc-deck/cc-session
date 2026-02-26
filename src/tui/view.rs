@@ -98,58 +98,68 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Render the detail view showing user prompts for a session.
 fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
+    use super::DetailButton;
+
     let detail = match &app.detail {
         Some(d) => d,
         None => return,
     };
 
     let session = &app.sessions[detail.session_idx];
+    let inner_width = area.width.saturating_sub(4) as usize;
 
-    // Layout: bordered prompt list + button area (4 lines)
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(4)])
-        .split(area);
-
-    let list_area = chunks[0];
-    let button_area = chunks[1];
-
-    // -- Bordered prompt list --
-    let inner_width = list_area.width.saturating_sub(4) as usize; // 2 for border + 2 padding
-    let inner_height = list_area.height.saturating_sub(2) as usize; // 2 for top/bottom border
-
-    let mut lines: Vec<Line> = Vec::new();
+    // Build prompt lines
+    let mut prompt_lines: Vec<Line> = Vec::new();
 
     if detail.prompts.is_empty() {
-        lines.push(Line::from(Span::styled(
+        prompt_lines.push(Line::from(Span::styled(
             " No user prompts found in this session.",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
-        let start = detail.scroll_offset;
-        let end = (start + inner_height).min(detail.prompts.len());
-
-        for i in start..end {
-            let prompt = &detail.prompts[i];
-
+        for prompt in &detail.prompts {
             let delta = Utc::now().signed_duration_since(prompt.timestamp);
             let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
 
             let max_text_len = inner_width.saturating_sub(18);
             let text = truncate_str(&prompt.text, max_text_len);
 
-            let line = Line::from(vec![
+            prompt_lines.push(Line::from(vec![
                 Span::styled(
                     format!(" {:>14}  ", time_ago),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(text, Style::default().fg(Color::Reset)),
-            ]);
-
-            lines.push(line);
+            ]));
         }
     }
 
+    // Box height = content + 2 (borders), capped to available space minus button area
+    let box_content_height = prompt_lines.len();
+    let max_box_height = area.height.saturating_sub(4) as usize; // leave 4 lines for gap + buttons
+    let box_height = (box_content_height + 2).min(max_box_height).max(3) as u16;
+    let button_block_height = 3_u16; // empty line + button line + shortcut line
+
+    // Total used height
+    let total_used = box_height + 1 + button_block_height; // +1 for gap between box and buttons
+    let top_margin = area.height.saturating_sub(total_used) / 2;
+
+    // Vertical layout: top margin, box, gap, buttons, bottom margin
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(top_margin),
+            Constraint::Length(box_height),
+            Constraint::Length(1), // gap
+            Constraint::Length(button_block_height),
+            Constraint::Min(0), // bottom margin
+        ])
+        .split(area);
+
+    let box_area = outer[1];
+    let button_area = outer[3];
+
+    // -- Bordered prompt list --
     let branch = session.git_branch.as_deref().unwrap_or("");
     let title = if branch.is_empty() {
         format!(
@@ -166,32 +176,80 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
         )
     };
 
+    // If content overflows, show from the bottom (newest)
+    let visible = box_height.saturating_sub(2) as usize;
+    if prompt_lines.len() > visible {
+        let skip = prompt_lines.len() - visible;
+        prompt_lines.drain(..skip);
+    }
+
     let prompt_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray))
         .title(title)
         .title_style(Style::default().fg(Color::Green).bold());
 
-    let prompt_list = Paragraph::new(Text::from(lines)).block(prompt_block);
-    frame.render_widget(prompt_list, list_area);
+    let prompt_widget = Paragraph::new(Text::from(prompt_lines)).block(prompt_block);
+    frame.render_widget(prompt_widget, box_area);
 
-    // -- Buttons --
+    // -- Buttons (centered) --
+    let copy_focused = detail.focused_button == DetailButton::CopyAndExit;
+
+    let btn_copy_label = " Copy to clipboard & Exit ";
+    let btn_back_label = " Back ";
+    let btn_gap = "    ";
+    let total_btn_width =
+        btn_copy_label.len() + btn_back_label.len() + btn_gap.len() + 4; // +4 for brackets
+    let left_pad = (area.width as usize).saturating_sub(total_btn_width) / 2;
+    let pad_str = " ".repeat(left_pad);
+
     let dim = Style::default().fg(Color::DarkGray);
-    let button_lines = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("   Copy to clipboard & Exit", Style::default().fg(Color::Cyan).bold()),
-            Span::styled("          ", Style::default()),
-            Span::styled("Back", Style::default().fg(Color::Reset)),
-        ]),
-        Line::from(vec![
-            Span::styled("   Enter", dim),
-            Span::styled("                            ", Style::default()),
-            Span::styled("Esc", dim),
-        ]),
-    ];
 
-    let buttons = Paragraph::new(Text::from(button_lines));
+    // Button line
+    let btn_line = Line::from(vec![
+        Span::raw(&pad_str),
+        if copy_focused {
+            Span::styled(
+                format!("[{btn_copy_label}]"),
+                Style::default().fg(Color::Cyan).bold(),
+            )
+        } else {
+            Span::styled(format!(" {btn_copy_label} "), dim)
+        },
+        Span::raw(btn_gap),
+        if !copy_focused {
+            Span::styled(
+                format!("[{btn_back_label}]"),
+                Style::default().fg(Color::Cyan).bold(),
+            )
+        } else {
+            Span::styled(format!(" {btn_back_label} "), dim)
+        },
+    ]);
+
+    // Shortcut line (centered under buttons)
+    let sc_copy = "Enter";
+    let sc_back = "Esc";
+    // Align shortcuts roughly under button centers
+    let copy_center = left_pad + 1 + btn_copy_label.len() / 2;
+    let back_center =
+        left_pad + btn_copy_label.len() + 2 + btn_gap.len() + 1 + btn_back_label.len() / 2;
+    let sc_copy_pad = copy_center.saturating_sub(sc_copy.len() / 2);
+    let sc_gap = back_center.saturating_sub(sc_copy_pad + sc_copy.len() + sc_back.len() / 2);
+
+    let shortcut_line = Line::from(vec![
+        Span::styled(" ".repeat(sc_copy_pad), dim),
+        Span::styled(sc_copy, dim),
+        Span::styled(" ".repeat(sc_gap), dim),
+        Span::styled(sc_back, dim),
+    ]);
+
+    let tab_hint = Line::from(vec![
+        Span::raw(&pad_str),
+        Span::styled("Tab to switch", Style::default().fg(Color::Rgb(60, 60, 70))),
+    ]);
+
+    let buttons = Paragraph::new(Text::from(vec![btn_line, shortcut_line, tab_hint]));
     frame.render_widget(buttons, button_area);
 }
 
