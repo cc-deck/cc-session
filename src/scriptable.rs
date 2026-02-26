@@ -9,7 +9,7 @@ use crate::session::Session;
 /// Run the scriptable selection mode with fuzzy filtering.
 ///
 /// Returns an exit code (0 = success, 1 = no match).
-pub fn run_scriptable(sessions: &[Session], query: &str) -> i32 {
+pub fn run_scriptable(sessions: &[Session], query: &str, quick: bool) -> i32 {
     let matches: Vec<&Session> = if query.is_empty() {
         sessions.iter().collect()
     } else {
@@ -19,25 +19,26 @@ pub fn run_scriptable(sessions: &[Session], query: &str) -> i32 {
             .collect()
     };
 
-    present_selection(&matches, query)
+    present_selection(&matches, query, quick)
 }
 
 /// Run the scriptable selection mode with pre-filtered results (e.g. from deep search).
 ///
 /// Returns an exit code (0 = success, 1 = no match).
-pub fn run_scriptable_prefiltered(sessions: &[Session], label: &str) -> i32 {
+pub fn run_scriptable_prefiltered(sessions: &[Session], label: &str, quick: bool) -> i32 {
     let refs: Vec<&Session> = sessions.iter().collect();
-    present_selection(&refs, label)
+    present_selection(&refs, label, quick)
 }
 
 /// Shared selection logic: single match prints command, multiple shows menu.
-fn present_selection(sessions: &[&Session], label: &str) -> i32 {
+/// In quick mode, always picks the top match without interaction.
+fn present_selection(sessions: &[&Session], label: &str, quick: bool) -> i32 {
     if sessions.is_empty() {
         eprintln!("No sessions found matching \"{label}\"");
         return 1;
     }
 
-    if sessions.len() == 1 {
+    if sessions.len() == 1 || quick {
         println!("{}", sessions[0].resume_command());
         return 0;
     }

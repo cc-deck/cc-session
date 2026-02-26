@@ -29,6 +29,10 @@ struct Cli {
     /// Show at most N sessions
     #[arg(long)]
     last: Option<usize>,
+
+    /// Quick mode: print the top match directly (no menu, no clipboard). Use with -s or -g.
+    #[arg(short = 'q', long = "quick")]
+    quick: bool,
 }
 
 /// Parse a human-friendly duration string into a chrono::Duration.
@@ -84,13 +88,13 @@ fn main() {
     // Dispatch to the appropriate mode
     if let Some(query) = cli.select {
         let q = query.unwrap_or_default();
-        let code = scriptable::run_scriptable(&sessions, &q);
+        let code = scriptable::run_scriptable(&sessions, &q, cli.quick);
         std::process::exit(code);
     }
 
     if let Some(pattern) = cli.grep {
         let results = search::deep_search(&claude_home, &pattern);
-        let code = scriptable::run_scriptable_prefiltered(&results, &pattern);
+        let code = scriptable::run_scriptable_prefiltered(&results, &pattern, cli.quick);
         std::process::exit(code);
     }
 
