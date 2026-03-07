@@ -269,14 +269,15 @@ fn pre_render_conversation(
             }
         }
 
-        // Message body with word wrapping and code fence detection
+        // Message body with word wrapping, code fence detection, and markdown
         let mut in_code_fence = false;
+        let heading_style = Style::default().fg(Color::Yellow).bold();
+        let base_style = Style::default().fg(Color::Reset);
 
         for text_line in msg.text.lines() {
             let trimmed = text_line.trim();
             if trimmed.starts_with("```") {
                 in_code_fence = !in_code_fence;
-                // Render the fence delimiter
                 let wrapped = wrap_line(text_line, width);
                 for wl in wrapped {
                     lines.push(Line::from(vec![Span::styled(wl, code_style)]));
@@ -289,11 +290,26 @@ fn pre_render_conversation(
                 for wl in wrapped {
                     lines.push(Line::from(vec![Span::styled(wl, code_style)]));
                 }
+            } else if trimmed.starts_with('#') {
+                // Markdown heading
+                let level = trimmed.chars().take_while(|&c| c == '#').count();
+                let heading_text = trimmed[level..].trim_start();
+                let prefix = "\u{2500}".repeat(level.min(3));
+                let wrapped = wrap_line(heading_text, width.saturating_sub(prefix.len() + 1));
+                for (i, wl) in wrapped.into_iter().enumerate() {
+                    let mut spans = Vec::new();
+                    if i == 0 {
+                        spans.push(Span::styled(format!("{} ", prefix), dim));
+                    }
+                    spans.extend(render_markdown_inline(&wl, heading_style, search_terms));
+                    lines.push(Line::from(spans));
+                }
+            } else if trimmed.is_empty() {
+                lines.push(Line::from(""));
             } else {
                 let wrapped = wrap_line(text_line, width);
-                let base_style = Style::default().fg(Color::Reset);
                 for wl in wrapped {
-                    let spans = highlight_terms(&wl, search_terms, base_style);
+                    let spans = render_markdown_inline(&wl, base_style, search_terms);
                     lines.push(Line::from(spans));
                 }
             }
@@ -505,7 +521,108 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Split text into spans, underlining portions that match any of the search terms.
+/// Render inline markdown (bold, italic, inline code) as styled spans,
+/// then apply search term highlighting on top.
+fn render_markdown_inline<'a>(
+    text: &str,
+    base_style: Style,
+    search_terms: &[&str],
+) -> Vec<Span<'a>> {
+    let bold_style = base_style.bold();
+    let italic_style = base_style.italic();
+    let code_style = Style::default().fg(Color::Rgb(130, 170, 200));
+
+    let mut spans: Vec<(String, Style)> = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    let mut current = String::new();
+
+    while i < len {
+        // Bold: **text**
+        if i + 1 < len && chars[i] == '*' && chars[i + 1] == '*' {
+            if !current.is_empty() {
+                spans.push((std::mem::take(&mut current), base_style));
+            }
+            i += 2;
+            let mut bold_text = String::new();
+            while i + 1 < len && !(chars[i] == '*' && chars[i + 1] == '*') {
+                bold_text.push(chars[i]);
+                i += 1;
+            }
+            if i + 1 < len {
+                i += 2; // skip closing **
+            }
+            spans.push((bold_text, bold_style));
+            continue;
+        }
+
+        // Inline code: `text`
+        if chars[i] == '`' {
+            if !current.is_empty() {
+                spans.push((std::mem::take(&mut current), base_style));
+            }
+            i += 1;
+            let mut code_text = String::new();
+            while i < len && chars[i] != '`' {
+                code_text.push(chars[i]);
+                i += 1;
+            }
+            if i < len {
+                i += 1; // skip closing `
+            }
+            spans.push((code_text, code_style));
+            continue;
+        }
+
+        // Italic: *text* (single star, not followed by another star)
+        if chars[i] == '*' && (i + 1 >= len || chars[i + 1] != '*') {
+            if !current.is_empty() {
+                spans.push((std::mem::take(&mut current), base_style));
+            }
+            i += 1;
+            let mut italic_text = String::new();
+            while i < len && chars[i] != '*' {
+                italic_text.push(chars[i]);
+                i += 1;
+            }
+            if i < len {
+                i += 1; // skip closing *
+            }
+            if italic_text.is_empty() {
+                // Lone star, not italic
+                spans.push(("*".to_string(), base_style));
+            } else {
+                spans.push((italic_text, italic_style));
+            }
+            continue;
+        }
+
+        current.push(chars[i]);
+        i += 1;
+    }
+
+    if !current.is_empty() {
+        spans.push((current, base_style));
+    }
+
+    // Now apply search highlighting on top of the styled spans
+    if search_terms.is_empty() {
+        return spans
+            .into_iter()
+            .map(|(text, style)| Span::styled(text, style))
+            .collect();
+    }
+
+    let mut result: Vec<Span<'a>> = Vec::new();
+    for (segment, style) in spans {
+        result.extend(highlight_terms(&segment, search_terms, style));
+    }
+    result
+}
+
+/// Split text into spans, highlighting portions that match any search terms
+/// with a subtle background color.
 fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Span<'a>> {
     if terms.is_empty() {
         return vec![Span::styled(text.to_string(), base_style)];
@@ -530,7 +647,7 @@ fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Spa
         }
     }
 
-    let highlight_style = base_style.underlined();
+    let highlight_style = base_style.bg(Color::Rgb(60, 50, 0));
     let mut spans = Vec::new();
     let mut i = 0;
     while i < len {
