@@ -1,20 +1,20 @@
-// Fuzzy filtering with nucleo
-
-use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32Str};
+// Substring-based filtering for sessions
 
 use crate::session::Session;
 
-/// Run a fuzzy match of `query` against sessions, returning matching indices and scores.
+/// Filter sessions by requiring all space-separated terms to appear as
+/// case-insensitive substrings in "{project_name} {git_branch} {first_message}".
 ///
-/// Each session is matched against the string "{project_name} {git_branch} {first_message}".
-/// Results are sorted by score descending (best match first).
-pub fn fuzzy_filter(sessions: &[Session], query: &str) -> Vec<(usize, u32)> {
-    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
-    let mut matcher = Matcher::new(Config::DEFAULT);
-    let mut buf = Vec::new();
+/// Returns matching indices (in original order, since all matches are equal rank).
+pub fn filter_sessions(sessions: &[Session], query: &str) -> Vec<usize> {
+    let query_lower = query.to_lowercase();
+    let terms: Vec<&str> = query_lower.split_whitespace().collect();
 
-    let mut results: Vec<(usize, u32)> = sessions
+    if terms.is_empty() {
+        return (0..sessions.len()).collect();
+    }
+
+    sessions
         .iter()
         .enumerate()
         .filter_map(|(idx, session)| {
@@ -22,12 +22,14 @@ pub fn fuzzy_filter(sessions: &[Session], query: &str) -> Vec<(usize, u32)> {
             let haystack = format!(
                 "{} {} {}",
                 session.project_name, branch, session.first_message
-            );
-            let score = pattern.score(Utf32Str::new(&haystack, &mut buf), &mut matcher)?;
-            Some((idx, score))
-        })
-        .collect();
+            )
+            .to_lowercase();
 
-    results.sort_by(|a, b| b.1.cmp(&a.1));
-    results
+            if terms.iter().all(|term| haystack.contains(term)) {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .collect()
 }

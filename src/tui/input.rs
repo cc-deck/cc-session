@@ -12,14 +12,31 @@ pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
     match app.mode {
         Mode::Browsing => handle_browse(app, key),
         Mode::Filtering => handle_filter(app, key),
+        Mode::DeepSearchInput => handle_deep_search_input(app, key),
+        Mode::DeepSearching => handle_deep_searching(app, key),
         Mode::Detail => handle_detail(app, key),
     }
 }
 
 fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
-        KeyCode::Char('q') => Action::Quit,
-        KeyCode::Esc => Action::Quit,
+        KeyCode::Char('q') => {
+            if app.is_deep_search() {
+                Action::RestoreOriginal
+            } else {
+                Action::Quit
+            }
+        }
+        KeyCode::Esc => {
+            if app.is_deep_search() {
+                // Go back to deep search input so user can refine the query
+                app.filter_query = app.deep_search_query.clone().unwrap_or_default();
+                app.mode = Mode::DeepSearchInput;
+                Action::Continue
+            } else {
+                Action::Quit
+            }
+        }
         KeyCode::Char('j') | KeyCode::Down => {
             app.move_down();
             Action::Continue
@@ -45,12 +62,9 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
-    // Ctrl-G: deep search
+    // Ctrl-G: switch to deep search input mode
     if key.code == KeyCode::Char('g') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        if !app.filter_query.is_empty() {
-            return Action::DeepSearch(app.filter_query.clone());
-        }
-        return Action::Continue;
+        return Action::StartDeepSearchInput;
     }
 
     match key.code {
@@ -84,6 +98,52 @@ fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Up => {
             app.move_up();
+            Action::Continue
+        }
+        _ => Action::Continue,
+    }
+}
+
+fn handle_deep_search_input(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            if app.is_deep_search() {
+                // We came from deep search results, restore original
+                Action::RestoreOriginal
+            } else {
+                // We came from normal filter mode, go back there
+                app.mode = Mode::Filtering;
+                Action::Continue
+            }
+        }
+        KeyCode::Enter => {
+            if !app.filter_query.is_empty() {
+                Action::DeepSearch(app.filter_query.clone())
+            } else {
+                Action::Continue
+            }
+        }
+        KeyCode::Backspace => {
+            app.filter_query.pop();
+            Action::Continue
+        }
+        KeyCode::Char(c) => {
+            app.filter_query.push(c);
+            Action::Continue
+        }
+        _ => Action::Continue,
+    }
+}
+
+fn handle_deep_searching(_app: &mut App, key: KeyEvent) -> Action {
+    // Only allow Esc to cancel during search
+    match key.code {
+        KeyCode::Esc => {
+            // Drop the receiver to abandon results; restore browsing
+            _app.search_receiver = None;
+            _app.deep_search_query = None;
+            _app.mode = Mode::Browsing;
+            _app.filter_query.clear();
             Action::Continue
         }
         _ => Action::Continue,

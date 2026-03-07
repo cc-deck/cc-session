@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 /// A discovered Claude Code session with metadata.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Session {
     pub id: String,
     pub project_path: String,
@@ -160,7 +161,12 @@ pub fn clean_message(text: &str) -> String {
 /// Check if a raw message is purely internal markup (no real user content).
 pub fn is_meta_message(text: &str) -> bool {
     let cleaned = clean_message(text);
-    cleaned.is_empty() || cleaned.len() < 3
+    if cleaned.is_empty() || cleaned.len() < 3 {
+        return true;
+    }
+    // Filter out bracket-enclosed system messages like "[Request interrupted by user]"
+    let trimmed = cleaned.trim();
+    trimmed.starts_with('[') && trimmed.ends_with(']') && !trimmed[1..].contains('[')
 }
 
 /// A single user prompt extracted from a session JSONL file.

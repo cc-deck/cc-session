@@ -3,19 +3,19 @@ use std::io::{self, BufRead, Write};
 use chrono::Utc;
 use chrono_humanize::{Accuracy, HumanTime, Tense};
 
-use crate::filter::fuzzy_filter;
+use crate::filter::filter_sessions;
 use crate::session::Session;
 
-/// Run the scriptable selection mode with fuzzy filtering.
+/// Run the scriptable selection mode with filtering.
 ///
 /// Returns an exit code (0 = success, 1 = no match).
 pub fn run_scriptable(sessions: &[Session], query: &str, quick: bool) -> i32 {
     let matches: Vec<&Session> = if query.is_empty() {
         sessions.iter().collect()
     } else {
-        fuzzy_filter(sessions, query)
+        filter_sessions(sessions, query)
             .into_iter()
-            .map(|(idx, _)| &sessions[idx])
+            .map(|idx| &sessions[idx])
             .collect()
     };
 

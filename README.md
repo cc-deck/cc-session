@@ -14,7 +14,7 @@ cc-session fixes this by scanning all your sessions, presenting them in a search
 ## Features
 
 - **Interactive TUI** with single-line session display (prompt text left, project + time right-aligned)
-- **Fuzzy filtering** via `/` key, matching across project name, git branch, and message text
+- **Substring filtering** via `/` key, matching across project name, git branch, and message text
 - **Detail view** showing the last 20 user prompts for session confirmation before resuming
 - **Scriptable mode** (`-s`) with slim selection menu for shell scripting
 - **Deep search** (`-g`) scanning full conversation content across all sessions in parallel
@@ -52,7 +52,7 @@ Requires a [Rust toolchain](https://rustup.rs/).
 # Browse all sessions interactively
 cc-session
 
-# Find sessions matching "auth" with fuzzy search
+# Find sessions matching "auth"
 cc-session -s auth
 
 # Deep search conversation content for a specific term
@@ -90,9 +90,9 @@ Press Enter on a session to open the **detail view**, showing the last 20 user p
 
 ### Filter mode
 
-Press `/` to enter filter mode. Type to fuzzy-search across project names, git branches, and prompt text. The list updates in real-time. Press Esc to clear the filter, Enter to open the selected session's detail view.
+Press `/` to enter filter mode. Type to search across project names, git branches, and prompt text. Each space-separated word must appear as a case-insensitive substring. The list updates in real-time. Press Esc to clear the filter, Enter to open the selected session's detail view.
 
-Press `Ctrl-G` while in filter mode to trigger a **deep search** that scans full conversation content (not just the first message).
+Press `Ctrl-G` while in filter mode to trigger a **deep search** that scans full conversation content (all user and assistant messages, not just the first message). Deep search results replace the session list. Press Esc or `q` to return to the full session list.
 
 ### Scriptable mode (`-s`)
 
@@ -148,18 +148,18 @@ cc-session --since 7d --last 10  # both constraints
 | `k` / `Up` | Move cursor up |
 | `/` | Enter filter mode |
 | `Enter` | Open detail view |
-| `q` / `Esc` | Quit |
+| `q` / `Esc` | Quit (or return from deep search results) |
 | `Ctrl-C` | Quit |
 
 ### Filter mode
 
 | Key | Action |
 |-----|--------|
-| Type | Fuzzy search |
+| Type | Substring search (space-separated terms) |
 | `Backspace` | Delete character |
 | `Ctrl-G` | Deep search with current query |
 | `Enter` | Open selected session's detail view |
-| `Esc` | Clear filter, return to list |
+| `Esc` | Cancel filter, return to list |
 
 ### Detail view
 
@@ -175,7 +175,7 @@ cc-session --since 7d --last 10  # both constraints
 
 2. **Parsing**: Reads the first few lines of each session file to find the first real user message (skipping `file-history-snapshot` entries and internal markup). Extracts project path, git branch, timestamp, and cleaned prompt text.
 
-3. **Display**: Single-line format with the prompt text left-aligned and project + time right-aligned. Fuzzy matching via nucleo (same algorithm as fzf).
+3. **Display**: Single-line format with the prompt text left-aligned and project + time right-aligned. Filtering uses case-insensitive substring matching (all space-separated terms must match).
 
 4. **Resume command**: Generates `cd '<project-path>' && claude -r <session-id>` with properly quoted paths. Copied to clipboard via arboard (cross-platform).
 

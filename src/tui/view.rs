@@ -257,20 +257,79 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let content = match app.mode {
         Mode::Filtering => {
-            let match_info = if app.filtered_indices.is_empty() {
-                " No matches".to_string()
+            let match_info = if app.filter_query.is_empty() {
+                String::new()
+            } else if app.filtered_indices.is_empty() {
+                " no matches".to_string()
             } else {
                 format!(" {} matches", app.filtered_indices.len())
             };
 
+            let mode_label = if app.is_deep_search() {
+                " FILTER (deep) "
+            } else {
+                " FILTER "
+            };
+
             Line::from(vec![
-                Span::styled(" / ", Style::default().fg(Color::Cyan).bold()),
+                Span::styled(
+                    mode_label,
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .bold(),
+                ),
+                Span::styled(" ", Style::default()),
                 Span::styled(&app.filter_query, Style::default().fg(Color::White)),
-                Span::styled("▎", Style::default().fg(Color::Cyan)),
+                Span::styled("\u{258E}", Style::default().fg(Color::Cyan)),
                 Span::styled(match_info, Style::default().fg(Color::DarkGray)),
                 Span::raw("  "),
                 Span::styled(
-                    "Ctrl-G deep search  Esc clear  Enter select",
+                    "Ctrl-G deep search  Esc cancel  Enter select",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])
+        }
+        Mode::DeepSearchInput => {
+            Line::from(vec![
+                Span::styled(
+                    " DEEP SEARCH \u{23CE} ",
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .bold(),
+                ),
+                Span::styled(" ", Style::default()),
+                Span::styled(&app.filter_query, Style::default().fg(Color::White)),
+                Span::styled("\u{258E}", Style::default().fg(Color::Yellow)),
+                Span::raw("  "),
+                Span::styled(
+                    "Enter search  Esc back to filter",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])
+        }
+        Mode::DeepSearching => {
+            let query = app.deep_search_query.as_deref().unwrap_or("");
+            Line::from(vec![
+                Span::styled(
+                    " DEEP SEARCH ",
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .bold(),
+                ),
+                Span::styled(
+                    format!(" {} ", app.spinner_char()),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::styled(
+                    format!("Searching \"{}\"...", query),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    "Esc cancel",
                     Style::default().fg(Color::DarkGray),
                 ),
             ])
@@ -278,10 +337,45 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Detail => Line::from(""), // handled by render_detail
         Mode::Browsing => {
             if let Some((msg, _)) = &app.status_message {
-                Line::from(vec![Span::styled(
+                let mut spans = vec![Span::styled(
                     format!(" {msg}"),
                     Style::default().fg(Color::Green).bold(),
-                )])
+                )];
+                if app.is_deep_search() {
+                    spans.push(Span::raw("  "));
+                    spans.push(Span::styled(
+                        "Esc back",
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
+                Line::from(spans)
+            } else if app.is_deep_search() {
+                let query = app
+                    .deep_search_query
+                    .as_deref()
+                    .unwrap_or("");
+                Line::from(vec![
+                    Span::styled(
+                        " DEEP SEARCH ",
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Yellow)
+                            .bold(),
+                    ),
+                    Span::styled(
+                        format!(" \"{}\"", query),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::raw("  "),
+                    Span::styled("/ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("filter", Style::default().fg(Color::DarkGray)),
+                    Span::raw("  "),
+                    Span::styled("Esc ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("back", Style::default().fg(Color::DarkGray)),
+                    Span::raw("  "),
+                    Span::styled("Enter ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("detail", Style::default().fg(Color::DarkGray)),
+                ])
             } else {
                 Line::from(vec![
                     Span::styled(" / ", Style::default().fg(Color::DarkGray)),

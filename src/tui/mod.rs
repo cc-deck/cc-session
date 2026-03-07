@@ -2,6 +2,7 @@ pub mod input;
 pub mod view;
 
 use std::io::stdout;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event};
@@ -13,7 +14,7 @@ use ratatui::prelude::*;
 
 use crate::clipboard;
 use crate::discovery::{get_claude_home, load_session_prompts};
-use crate::filter::fuzzy_filter;
+use crate::filter::filter_sessions;
 use crate::search;
 use crate::session::{Session, UserPrompt};
 
@@ -24,6 +25,8 @@ use input::handle_input;
 pub enum Mode {
     Browsing,
     Filtering,
+    DeepSearchInput,
+    DeepSearching,
     Detail,
 }
 
@@ -34,7 +37,9 @@ pub enum Action {
     EnterDetail(usize),
     CopyCommand(String),
     BackToList,
+    StartDeepSearchInput,
     DeepSearch(String),
+    RestoreOriginal,
 }
 
 /// Which button is focused in the detail view.
@@ -62,6 +67,14 @@ pub struct App {
     pub filter_query: String,
     pub status_message: Option<(String, Instant)>,
     pub detail: Option<DetailState>,
+    /// Original sessions saved before a deep search, so we can restore them.
+    pub original_sessions: Option<Vec<Session>>,
+    /// The query that produced the current deep search results.
+    pub deep_search_query: Option<String>,
+    /// Receiver for background deep search results.
+    pub search_receiver: Option<mpsc::Receiver<Vec<Session>>>,
+    /// Spinner frame counter for deep search progress.
+    pub spinner_tick: usize,
 }
 
 impl App {
@@ -76,19 +89,36 @@ impl App {
             filter_query: String::new(),
             status_message: None,
             detail: None,
+            original_sessions: None,
+            deep_search_query: None,
+            search_receiver: None,
+            spinner_tick: 0,
         }
     }
 
-    /// Re-run the fuzzy filter and update `filtered_indices`.
+    /// Re-run the filter and update `filtered_indices`.
     pub fn apply_filter(&mut self) {
-        if self.filter_query.is_empty() {
-            self.filtered_indices = (0..self.sessions.len()).collect();
-        } else {
-            let matches = fuzzy_filter(&self.sessions, &self.filter_query);
-            self.filtered_indices = matches.into_iter().map(|(idx, _)| idx).collect();
-        }
+        self.filtered_indices = filter_sessions(&self.sessions, &self.filter_query);
         self.selected = 0;
         self.scroll_offset = 0;
+    }
+
+    /// Restore original sessions after a deep search.
+    pub fn restore_original_sessions(&mut self) {
+        if let Some(original) = self.original_sessions.take() {
+            self.sessions = original;
+            self.deep_search_query = None;
+            self.filtered_indices = (0..self.sessions.len()).collect();
+            self.selected = 0;
+            self.scroll_offset = 0;
+            self.filter_query.clear();
+            self.mode = Mode::Browsing;
+        }
+    }
+
+    /// Whether the app is currently showing deep search results.
+    pub fn is_deep_search(&self) -> bool {
+        self.original_sessions.is_some()
     }
 
     /// Move the selection cursor down, clamped to bounds.
@@ -151,6 +181,57 @@ impl App {
         self.status_message = Some((msg, Instant::now()));
     }
 
+    /// Spinner character for the current tick.
+    pub fn spinner_char(&self) -> char {
+        const FRAMES: &[char] = &['\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280F}'];
+        FRAMES[self.spinner_tick % FRAMES.len()]
+    }
+
+    /// Check if the background search has completed. Returns true if results were received.
+    pub fn poll_search(&mut self) -> bool {
+        if let Some(rx) = &self.search_receiver {
+            match rx.try_recv() {
+                Ok(results) => {
+                    self.search_receiver = None;
+                    let query = self.deep_search_query.clone().unwrap_or_default();
+                    if results.is_empty() {
+                        self.set_status(format!("No sessions match \"{}\"", query));
+                        self.mode = Mode::Browsing;
+                        self.filter_query.clear();
+                    } else {
+                        let count = results.len();
+                        if self.original_sessions.is_none() {
+                            self.original_sessions = Some(std::mem::take(&mut self.sessions));
+                        }
+                        self.sessions = results;
+                        self.filtered_indices = (0..self.sessions.len()).collect();
+                        self.selected = 0;
+                        self.scroll_offset = 0;
+                        self.mode = Mode::Browsing;
+                        self.filter_query.clear();
+                        self.set_status(format!(
+                            "Deep search: {} sessions match \"{}\"",
+                            count, query
+                        ));
+                    }
+                    true
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    self.spinner_tick = self.spinner_tick.wrapping_add(1);
+                    false
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.search_receiver = None;
+                    self.set_status("Search failed".to_string());
+                    self.mode = Mode::Browsing;
+                    true
+                }
+            }
+        } else {
+            false
+        }
+    }
+
     /// Clear expired status messages.
     pub fn tick_status(&mut self) {
         if let Some((_, when)) = &self.status_message {
@@ -187,6 +268,9 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         app.tick_status();
+        if app.mode == Mode::DeepSearching {
+            app.poll_search();
+        }
         terminal.draw(|frame| {
             let height = frame.area().height.saturating_sub(2) as usize;
             let visible = height; // 1 line per item in both list and detail
@@ -208,29 +292,29 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
                             break;
                         }
                     },
+                    Action::StartDeepSearchInput => {
+                        app.mode = Mode::DeepSearchInput;
+                        // Keep current filter_query so user can refine it
+                    }
                     Action::DeepSearch(pattern) => {
+                        app.deep_search_query = Some(pattern.clone());
+                        app.mode = Mode::DeepSearching;
+                        app.spinner_tick = 0;
+
+                        let (tx, rx) = mpsc::channel();
+                        app.search_receiver = Some(rx);
+
                         let claude_home = get_claude_home();
-                        let results = search::deep_search(&claude_home, &pattern);
-                        if results.is_empty() {
-                            app.set_status(format!("No sessions match \"{}\"", pattern));
-                            app.mode = Mode::Browsing;
-                            app.filter_query.clear();
-                        } else {
-                            let count = results.len();
-                            app.sessions = results;
-                            app.filtered_indices = (0..app.sessions.len()).collect();
-                            app.selected = 0;
-                            app.scroll_offset = 0;
-                            app.mode = Mode::Browsing;
-                            app.filter_query.clear();
-                            app.set_status(format!(
-                                "Deep search: {} sessions match \"{}\"",
-                                count, pattern
-                            ));
-                        }
+                        std::thread::spawn(move || {
+                            let results = search::deep_search(&claude_home, &pattern);
+                            let _ = tx.send(results);
+                        });
                     }
                     Action::BackToList => {
                         app.leave_detail();
+                    }
+                    Action::RestoreOriginal => {
+                        app.restore_original_sessions();
                     }
                     Action::Continue => {}
                 }
