@@ -2,7 +2,7 @@
 
 **Feature Branch**: `004-fast-deep-search`
 **Created**: 2026-03-07
-**Status**: Draft
+**Status**: Implemented
 **Input**: Optimize deep search by reusing pre-loaded session metadata instead of re-parsing files for each match, reducing search time from 16s to under 1s for common terms.
 
 ## User Scenarios & Testing *(mandatory)*
