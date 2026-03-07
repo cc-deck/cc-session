@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 
 use crate::session::{
-    clean_message, is_meta_message, ConversationMessage, MessageRole, Session, SessionFileEntry,
+    clean_message, clean_message_multiline, is_meta_message, ConversationMessage, MessageRole,
+    Session, SessionFileEntry,
 };
 
 /// Return the Claude home directory.
@@ -147,7 +148,9 @@ fn parse_session_file(path: &Path) -> Option<Session> {
 /// Load all conversation messages (user + assistant) from a session JSONL file.
 ///
 /// Returns messages in chronological order. Skips file-history-snapshot entries,
-/// system entries, tool-use blocks, and meta-messages.
+/// system entries, tool-use blocks, and meta-messages. Consecutive messages from
+/// the same role are merged into a single message with paragraphs separated by
+/// blank lines.
 pub fn load_conversation(claude_home: &Path, session: &Session) -> Vec<ConversationMessage> {
     let encoded_dir = session.project_path.replace('/', "-");
     let file_path = claude_home
@@ -192,7 +195,7 @@ pub fn load_conversation(claude_home: &Path, session: &Session) -> Vec<Conversat
             continue;
         }
 
-        let text = clean_message(&raw_text);
+        let text = clean_message_multiline(&raw_text);
         if text.is_empty() {
             continue;
         }
@@ -201,6 +204,17 @@ pub fn load_conversation(claude_home: &Path, session: &Session) -> Vec<Conversat
             .timestamp
             .and_then(|t| t.parse().ok())
             .unwrap_or_else(Utc::now);
+
+        // Merge consecutive messages from the same role
+        if let Some(last) = messages.last_mut() {
+            if last.role == role {
+                last.text.push_str("\n\n");
+                last.text.push_str(&text);
+                // Keep the latest timestamp
+                last.timestamp = timestamp;
+                continue;
+            }
+        }
 
         messages.push(ConversationMessage {
             role,

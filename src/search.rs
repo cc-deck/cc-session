@@ -14,7 +14,13 @@ use crate::session::{clean_message, Session, SessionFileEntry};
 /// session metadata from the first user entry. Returns sessions sorted by
 /// timestamp descending.
 pub fn deep_search(claude_home: &Path, pattern: &str) -> Vec<Session> {
-    let re = match Regex::new(pattern) {
+    // Prepend (?i) for case-insensitive matching unless user already specified flags
+    let ci_pattern = if pattern.starts_with("(?") {
+        pattern.to_string()
+    } else {
+        format!("(?i){}", pattern)
+    };
+    let re = match Regex::new(&ci_pattern) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Invalid search pattern: {e}");

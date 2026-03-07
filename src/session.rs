@@ -128,18 +128,34 @@ impl<'de> Deserialize<'de> for StringOrArray {
     }
 }
 
-/// Strip XML-like markup tags from a message and return cleaned text.
+/// Strip XML-like markup tags from a message and return cleaned single-line text.
 ///
 /// Claude Code injects tags like `<command-message>`, `<command-name>`,
 /// `<command-args>`, `<local-command-caveat>`, `<system-reminder>`, etc.
 /// These are internal markers, not user-visible content.
+/// This version collapses all whitespace into a single line (for list display).
 pub fn clean_message(text: &str) -> String {
-    // Strip all <tag>...</tag> and self-closing <tag/> patterns
+    let stripped = strip_tags(text);
+    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Strip XML-like markup tags but preserve line breaks.
+///
+/// Used for conversation viewer where markdown structure matters.
+pub fn clean_message_multiline(text: &str) -> String {
+    let stripped = strip_tags(text);
+    // Trim each line individually, remove completely blank lines at start/end
+    let lines: Vec<&str> = stripped.lines().map(|l| l.trim_end()).collect();
+    let result = lines.join("\n");
+    result.trim().to_string()
+}
+
+/// Strip XML-like tags from text, preserving other content.
+fn strip_tags(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
     let mut inside_tag = false;
 
-    while let Some(c) = chars.next() {
+    for c in text.chars() {
         if c == '<' {
             inside_tag = true;
         } else if c == '>' && inside_tag {
@@ -149,13 +165,7 @@ pub fn clean_message(text: &str) -> String {
         }
     }
 
-    // Clean up: trim, collapse whitespace
-    let cleaned: String = result
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    cleaned
+    result
 }
 
 /// Check if a raw message is purely internal markup (no real user content).
