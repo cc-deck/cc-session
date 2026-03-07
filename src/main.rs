@@ -13,7 +13,11 @@ use discovery::{apply_filters, discover_sessions, get_claude_home};
 
 /// Fast CLI tool for finding and resuming Claude Code sessions.
 #[derive(Parser, Debug)]
-#[command(name = "cc-session", version, about)]
+#[command(
+    name = "cc-session",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("BUILD_GIT_HASH"), " ", env!("BUILD_DATE"), ")"),
+    about
+)]
 struct Cli {
     /// Scriptable select mode, with optional initial query
     #[arg(short, long)]
