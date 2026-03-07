@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::session::{ConversationMessage, MessageRole};
 
-use super::{App, Mode};
+use super::{App, ContentSearchState, MatchType, Mode};
 
 /// Render the full TUI frame.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -16,7 +16,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Layout: main area + bottom status bar (1 line)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -39,11 +38,11 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
     let term_refs: Vec<&str> = terms.iter().map(|s| s.as_str()).collect();
 
     let start = app.scroll_offset;
-    let end = (start + visible_items).min(app.filtered_indices.len());
+    let end = (start + visible_items).min(app.display_entries.len());
 
     for i in start..end {
-        let idx = app.filtered_indices[i];
-        let session = &app.sessions[idx];
+        let entry = &app.display_entries[i];
+        let session = app.display_session(entry);
         let is_selected = i == app.selected;
 
         let delta = Utc::now().signed_duration_since(session.timestamp);
@@ -51,8 +50,19 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         let right = format!("{}  {}", session.project_name, time_ago);
         let right_len = right.len();
 
-        let cursor = if is_selected { "\u{25B8} " } else { "  " };
-        let cursor_len = 2;
+        // Content-only indicator: dimmed dot prefix
+        let (cursor, cursor_len) = if is_selected {
+            if entry.match_type == MatchType::Content {
+                ("\u{25B8}\u{00B7}", 3)
+            } else {
+                ("\u{25B8} ", 2)
+            }
+        } else if entry.match_type == MatchType::Content {
+            (" \u{00B7}", 2)
+        } else {
+            ("  ", 2)
+        };
+
         let max_msg_len = width.saturating_sub(cursor_len + right_len + 2);
         let msg = truncate_str(&session.first_message, max_msg_len);
         let msg_len = msg.chars().count();
@@ -68,7 +78,13 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
 
         let dim = Style::default().fg(Color::DarkGray);
 
-        let mut spans = vec![Span::styled(cursor, Style::default().fg(Color::Cyan))];
+        let cursor_style = if entry.match_type == MatchType::Content {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+
+        let mut spans = vec![Span::styled(cursor, cursor_style)];
         spans.extend(highlight_terms(&msg, &term_refs, msg_style));
         spans.push(Span::raw(padding));
         spans.push(Span::styled(right, dim));
@@ -87,7 +103,7 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::NONE)
         .title(format!(
             " cc-session ({}/{}) ",
-            app.filtered_indices.len(),
+            app.display_entries.len(),
             app.sessions.len()
         ))
         .title_style(Style::default().fg(Color::Cyan).bold());
@@ -108,7 +124,6 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
     let full_content_area = chunks[0];
     let status_area = chunks[1];
 
-    // Center content horizontally with max width
     let terminal_width = full_content_area.width;
     let content_width = terminal_width.min(MAX_CONTENT_WIDTH);
     let left_margin = (terminal_width.saturating_sub(content_width)) / 2;
@@ -122,25 +137,29 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let height = content_area.height as usize;
 
-    // Update page_height and check if we need to re-render lines
     if let Some(conv) = &mut app.conversation {
         conv.page_height = height;
 
         if conv.rendered_width != content_width || conv.lines.is_empty() {
             let search_terms: Vec<String> = if !conv.search_query.is_empty() {
-                conv.search_query.split_whitespace().map(String::from).collect()
+                conv.search_query
+                    .split_whitespace()
+                    .map(String::from)
+                    .collect()
             } else {
                 conv.initial_search_terms.clone()
             };
             let term_refs: Vec<&str> = search_terms.iter().map(|s| s.as_str()).collect();
-            conv.lines = pre_render_conversation(&conv.messages, content_width as usize, &term_refs);
+            conv.lines =
+                pre_render_conversation(&conv.messages, content_width as usize, &term_refs);
             conv.rendered_width = content_width;
 
-            // Build match positions
             conv.match_positions = find_match_positions(&conv.lines, &term_refs);
 
-            // Auto-scroll to center first match on screen
-            if !conv.match_positions.is_empty() && conv.scroll_offset == 0 && !conv.search_confirmed {
+            if !conv.match_positions.is_empty()
+                && conv.scroll_offset == 0
+                && !conv.search_confirmed
+            {
                 let match_line = conv.match_positions[0];
                 let max = conv.lines.len().saturating_sub(height);
                 conv.scroll_offset = match_line.saturating_sub(height / 2).min(max);
@@ -148,7 +167,6 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    // Render content lines
     if let Some(conv) = &app.conversation {
         let total_lines = conv.lines.len();
         let start = conv.scroll_offset.min(total_lines.saturating_sub(1));
@@ -161,7 +179,6 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
         frame.render_widget(paragraph, content_area);
     }
 
-    // Render status bar (full width)
     render_conversation_status(frame, app, status_area);
 }
 
@@ -174,7 +191,11 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
             } else if conv.match_positions.is_empty() {
                 " No matches".to_string()
             } else {
-                format!(" {}/{}", conv.current_match + 1, conv.match_positions.len())
+                format!(
+                    " {}/{}",
+                    conv.current_match + 1,
+                    conv.match_positions.len()
+                )
             };
 
             Line::from(vec![
@@ -193,18 +214,22 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ])
         } else if conv.search_confirmed && !conv.match_positions.is_empty() {
-            let session = &app.sessions[conv.session_idx];
             Line::from(vec![
                 Span::styled(
                     " SESSION ",
                     Style::default().fg(Color::Black).bg(Color::Green).bold(),
                 ),
                 Span::styled(
-                    format!(" {} ", session.project_name),
+                    format!(" {} ", conv.session.project_name),
                     Style::default().fg(Color::Green),
                 ),
                 Span::styled(
-                    format!("\"{}\" {}/{}", conv.search_query, conv.current_match + 1, conv.match_positions.len()),
+                    format!(
+                        "\"{}\" {}/{}",
+                        conv.search_query,
+                        conv.current_match + 1,
+                        conv.match_positions.len()
+                    ),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::raw("  "),
@@ -214,14 +239,13 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ])
         } else {
-            let session = &app.sessions[conv.session_idx];
             Line::from(vec![
                 Span::styled(
                     " SESSION ",
                     Style::default().fg(Color::Black).bg(Color::Green).bold(),
                 ),
                 Span::styled(
-                    format!(" {} ", session.project_name),
+                    format!(" {} ", conv.session.project_name),
                     Style::default().fg(Color::Green),
                 ),
                 Span::raw(" "),
@@ -258,7 +282,6 @@ fn pre_render_conversation(
     }
 
     for msg in messages {
-        // Separator line with timestamp
         let delta = Utc::now().signed_duration_since(msg.timestamp);
         let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
         let time_str = format!(" {} ", time_ago);
@@ -269,7 +292,6 @@ fn pre_render_conversation(
             Span::styled(time_str, dim),
         ]));
 
-        // Role header
         match msg.role {
             MessageRole::User => {
                 lines.push(Line::from(Span::styled(
@@ -285,7 +307,6 @@ fn pre_render_conversation(
             }
         }
 
-        // Message body with word wrapping, code fence detection, and markdown
         let mut in_code_fence = false;
         let heading_style = Style::default().fg(Color::Green).bold();
         let base_style = Style::default().fg(Color::Reset);
@@ -307,7 +328,6 @@ fn pre_render_conversation(
                     lines.push(Line::from(vec![Span::styled(wl, code_style)]));
                 }
             } else if trimmed.starts_with('#') {
-                // Markdown heading
                 let level = trimmed.chars().take_while(|&c| c == '#').count();
                 let heading_text = trimmed[level..].trim_start();
                 let prefix = "\u{2500}".repeat(level.min(3));
@@ -331,7 +351,6 @@ fn pre_render_conversation(
             }
         }
 
-        // Blank line after message
         lines.push(Line::from(""));
     }
 
@@ -357,8 +376,7 @@ fn find_match_positions(lines: &[Line<'static>], terms: &[&str]) -> Vec<usize> {
     positions
 }
 
-/// Word-wrap a single line to fit within `width` characters,
-/// breaking at word boundaries when possible.
+/// Word-wrap a single line to fit within `width` characters.
 fn wrap_line(line: &str, width: usize) -> Vec<String> {
     if width == 0 {
         return vec![line.to_string()];
@@ -381,19 +399,16 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
             break;
         }
 
-        // Look for a word boundary (space) to break at
         let end = pos + width;
         let mut break_at = end;
 
-        // Search backwards from the end for a space
         for j in (pos..end).rev() {
             if chars[j] == ' ' {
-                break_at = j + 1; // include the space in the current line
+                break_at = j + 1;
                 break;
             }
         }
 
-        // If no space found in the last ~40% of the line, force break at width
         if break_at == end && (end - pos) > width / 2 {
             break_at = end;
         }
@@ -402,7 +417,6 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
         result.push(chunk.trim_end().to_string());
         pos = break_at;
 
-        // Skip leading spaces on the next line
         while pos < chars.len() && chars[pos] == ' ' {
             pos += 1;
         }
@@ -415,27 +429,28 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let content = match app.mode {
         Mode::Filtering => {
+            let match_count = app.display_entries.len();
             let match_info = if app.filter_query.is_empty() {
                 String::new()
-            } else if app.filtered_indices.is_empty() {
+            } else if match_count == 0 {
                 " no matches".to_string()
             } else {
-                format!(" {} matches", app.filtered_indices.len())
-            };
-
-            let mode_label = if app.is_deep_search() {
-                " FILTER (deep) "
-            } else {
-                " FILTER "
+                match app.content_search_state {
+                    ContentSearchState::Searching => {
+                        format!(
+                            " {} {} matches (searching content...)",
+                            app.spinner_char(),
+                            match_count
+                        )
+                    }
+                    _ => format!(" {} matches", match_count),
+                }
             };
 
             Line::from(vec![
                 Span::styled(
-                    mode_label,
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
-                        .bold(),
+                    " SEARCH ",
+                    Style::default().fg(Color::Black).bg(Color::Cyan).bold(),
                 ),
                 Span::styled(" ", Style::default()),
                 Span::styled(&app.filter_query, Style::default().fg(Color::White)),
@@ -443,51 +458,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(match_info, Style::default().fg(Color::DarkGray)),
                 Span::raw("  "),
                 Span::styled(
-                    "Ctrl-G deep search  Esc cancel  Enter select",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ])
-        }
-        Mode::DeepSearchInput => {
-            Line::from(vec![
-                Span::styled(
-                    " DEEP SEARCH \u{23CE} ",
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Yellow)
-                        .bold(),
-                ),
-                Span::styled(" ", Style::default()),
-                Span::styled(&app.filter_query, Style::default().fg(Color::White)),
-                Span::styled("\u{258E}", Style::default().fg(Color::Yellow)),
-                Span::raw("  "),
-                Span::styled(
-                    "Enter search  Esc back to filter",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ])
-        }
-        Mode::DeepSearching => {
-            let query = app.deep_search_query.as_deref().unwrap_or("");
-            Line::from(vec![
-                Span::styled(
-                    " DEEP SEARCH ",
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Yellow)
-                        .bold(),
-                ),
-                Span::styled(
-                    format!(" {} ", app.spinner_char()),
-                    Style::default().fg(Color::Yellow),
-                ),
-                Span::styled(
-                    format!("Searching \"{}\"...", query),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::raw("  "),
-                Span::styled(
-                    "Esc cancel",
+                    "Esc cancel  Enter select",
                     Style::default().fg(Color::DarkGray),
                 ),
             ])
@@ -495,49 +466,14 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Conversation | Mode::ConversationSearch => Line::from(""),
         Mode::Browsing => {
             if let Some((msg, _)) = &app.status_message {
-                let mut spans = vec![Span::styled(
+                Line::from(vec![Span::styled(
                     format!(" {msg}"),
                     Style::default().fg(Color::Green).bold(),
-                )];
-                if app.is_deep_search() {
-                    spans.push(Span::raw("  "));
-                    spans.push(Span::styled(
-                        "Esc back",
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                }
-                Line::from(spans)
-            } else if app.is_deep_search() {
-                let query = app
-                    .deep_search_query
-                    .as_deref()
-                    .unwrap_or("");
-                Line::from(vec![
-                    Span::styled(
-                        " DEEP SEARCH ",
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Yellow)
-                            .bold(),
-                    ),
-                    Span::styled(
-                        format!(" \"{}\"", query),
-                        Style::default().fg(Color::Yellow),
-                    ),
-                    Span::raw("  "),
-                    Span::styled("/ ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("filter", Style::default().fg(Color::DarkGray)),
-                    Span::raw("  "),
-                    Span::styled("Esc ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("back", Style::default().fg(Color::DarkGray)),
-                    Span::raw("  "),
-                    Span::styled("Enter ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("detail", Style::default().fg(Color::DarkGray)),
-                ])
+                )])
             } else {
                 Line::from(vec![
                     Span::styled(" / ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("filter", Style::default().fg(Color::DarkGray)),
+                    Span::styled("search", Style::default().fg(Color::DarkGray)),
                     Span::raw("  "),
                     Span::styled("Enter ", Style::default().fg(Color::DarkGray)),
                     Span::styled("detail", Style::default().fg(Color::DarkGray)),
@@ -584,7 +520,6 @@ fn render_markdown_inline<'a>(
     let mut current = String::new();
 
     while i < len {
-        // Bold: **text**
         if i + 1 < len && chars[i] == '*' && chars[i + 1] == '*' {
             if !current.is_empty() {
                 spans.push((std::mem::take(&mut current), base_style));
@@ -596,13 +531,12 @@ fn render_markdown_inline<'a>(
                 i += 1;
             }
             if i + 1 < len {
-                i += 2; // skip closing **
+                i += 2;
             }
             spans.push((bold_text, bold_style));
             continue;
         }
 
-        // Inline code: `text`
         if chars[i] == '`' {
             if !current.is_empty() {
                 spans.push((std::mem::take(&mut current), base_style));
@@ -614,13 +548,12 @@ fn render_markdown_inline<'a>(
                 i += 1;
             }
             if i < len {
-                i += 1; // skip closing `
+                i += 1;
             }
             spans.push((code_text, code_style));
             continue;
         }
 
-        // Italic: *text* (single star, not followed by another star)
         if chars[i] == '*' && (i + 1 >= len || chars[i + 1] != '*') {
             if !current.is_empty() {
                 spans.push((std::mem::take(&mut current), base_style));
@@ -632,10 +565,9 @@ fn render_markdown_inline<'a>(
                 i += 1;
             }
             if i < len {
-                i += 1; // skip closing *
+                i += 1;
             }
             if italic_text.is_empty() {
-                // Lone star, not italic
                 spans.push(("*".to_string(), base_style));
             } else {
                 spans.push((italic_text, italic_style));
@@ -651,7 +583,6 @@ fn render_markdown_inline<'a>(
         spans.push((current, base_style));
     }
 
-    // Now apply search highlighting on top of the styled spans
     if search_terms.is_empty() {
         return spans
             .into_iter()
@@ -666,8 +597,7 @@ fn render_markdown_inline<'a>(
     result
 }
 
-/// Split text into spans, highlighting portions that match any search terms
-/// with a subtle background color.
+/// Split text into spans, highlighting portions that match any search terms.
 fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Span<'a>> {
     if terms.is_empty() {
         return vec![Span::styled(text.to_string(), base_style)];
@@ -685,8 +615,8 @@ fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Spa
         let mut start = 0;
         while let Some(pos) = text_lower[start..].find(&term_lower) {
             let abs_pos = start + pos;
-            for i in abs_pos..abs_pos + term_lower.len() {
-                matched[i] = true;
+            for m in matched.iter_mut().skip(abs_pos).take(term_lower.len()) {
+                *m = true;
             }
             start = abs_pos + 1;
         }
@@ -716,10 +646,11 @@ fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Spa
 /// Get the active search terms for highlighting from the app state.
 fn search_terms(app: &App) -> Vec<String> {
     if !app.filter_query.is_empty() {
-        return app.filter_query.split_whitespace().map(String::from).collect();
-    }
-    if let Some(query) = &app.deep_search_query {
-        return query.split_whitespace().map(String::from).collect();
+        return app
+            .filter_query
+            .split_whitespace()
+            .map(String::from)
+            .collect();
     }
     Vec::new()
 }

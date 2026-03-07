@@ -1,12 +1,14 @@
 pub mod input;
 pub mod view;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::stdout;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use crossterm::event::{self, Event};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -27,10 +29,40 @@ use input::handle_input;
 pub enum Mode {
     Browsing,
     Filtering,
-    DeepSearchInput,
-    DeepSearching,
     Conversation,
     ConversationSearch,
+}
+
+/// Phase of the background content search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContentSearchState {
+    Idle,
+    Debouncing,
+    Searching,
+    Complete,
+}
+
+/// How a session matched the search query.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatchType {
+    Metadata,
+    Content,
+    Both,
+}
+
+/// Reference to a session in either the main sessions list or content results.
+#[derive(Debug, Clone)]
+pub enum DisplaySource {
+    Sessions(usize),
+    Content(usize),
+}
+
+/// A single entry in the merged search results display.
+#[derive(Debug, Clone)]
+pub struct DisplayEntry {
+    pub match_type: MatchType,
+    pub source: DisplaySource,
+    pub timestamp: DateTime<Utc>,
 }
 
 /// What the input handler tells the main loop to do.
@@ -40,14 +72,11 @@ pub enum Action {
     EnterConversation(usize),
     CopyCommand(String),
     BackToList,
-    StartDeepSearchInput,
-    DeepSearch(String),
-    RestoreOriginal,
 }
 
 /// State for the conversation viewer.
 pub struct ConversationState {
-    pub session_idx: usize,
+    pub session: Session,
     pub messages: Vec<ConversationMessage>,
     pub lines: Vec<Line<'static>>,
     pub scroll_offset: usize,
@@ -65,73 +94,132 @@ pub struct ConversationState {
 pub struct App {
     pub sessions: Vec<Session>,
     pub filtered_indices: Vec<usize>,
+    pub display_entries: Vec<DisplayEntry>,
     pub selected: usize,
     pub scroll_offset: usize,
     pub mode: Mode,
     pub filter_query: String,
     pub status_message: Option<(String, Instant)>,
     pub conversation: Option<ConversationState>,
-    /// Original sessions saved before a deep search, so we can restore them.
-    pub original_sessions: Option<Vec<Session>>,
-    /// The query that produced the current deep search results.
-    pub deep_search_query: Option<String>,
-    /// Receiver for background deep search results.
+    /// Content-only search results from background search.
+    pub content_results: Vec<Session>,
+    /// Current phase of content search.
+    pub content_search_state: ContentSearchState,
+    /// When the last filter keystroke occurred, for debounce.
+    pub last_keystroke: Option<Instant>,
+    /// Flag to cancel in-progress content search.
+    pub cancel_flag: Arc<AtomicBool>,
+    /// Receiver for background content search results.
     pub search_receiver: Option<mpsc::Receiver<Vec<Session>>>,
-    /// Spinner frame counter for deep search progress.
+    /// Spinner frame counter.
     pub spinner_tick: usize,
-    /// Pre-built file-path-to-session index for fast deep search.
+    /// Pre-built file-path-to-session index for fast content search.
     pub session_index: Arc<HashMap<PathBuf, Session>>,
 }
 
 impl App {
     pub fn new(sessions: Vec<Session>, session_index: HashMap<PathBuf, Session>) -> Self {
         let filtered_indices: Vec<usize> = (0..sessions.len()).collect();
+        let display_entries: Vec<DisplayEntry> = filtered_indices
+            .iter()
+            .map(|&idx| DisplayEntry {
+                match_type: MatchType::Metadata,
+                source: DisplaySource::Sessions(idx),
+                timestamp: sessions[idx].timestamp,
+            })
+            .collect();
         Self {
             sessions,
             filtered_indices,
+            display_entries,
             selected: 0,
             scroll_offset: 0,
             mode: Mode::Browsing,
             filter_query: String::new(),
             status_message: None,
             conversation: None,
-            original_sessions: None,
-            deep_search_query: None,
+            content_results: Vec::new(),
+            content_search_state: ContentSearchState::Idle,
+            last_keystroke: None,
+            cancel_flag: Arc::new(AtomicBool::new(false)),
             search_receiver: None,
             spinner_tick: 0,
             session_index: Arc::new(session_index),
         }
     }
 
-    /// Re-run the filter and update `filtered_indices`.
+    /// Re-run the metadata filter and rebuild display entries.
     pub fn apply_filter(&mut self) {
         self.filtered_indices = filter_sessions(&self.sessions, &self.filter_query);
+        self.rebuild_display_entries();
         self.selected = 0;
         self.scroll_offset = 0;
     }
 
-    /// Restore original sessions after a deep search.
-    pub fn restore_original_sessions(&mut self) {
-        if let Some(original) = self.original_sessions.take() {
-            self.sessions = original;
-            self.deep_search_query = None;
-            self.filtered_indices = (0..self.sessions.len()).collect();
-            self.selected = 0;
-            self.scroll_offset = 0;
-            self.filter_query.clear();
-            self.mode = Mode::Browsing;
+    /// Build merged display entries from metadata matches and content results.
+    pub fn rebuild_display_entries(&mut self) {
+        let content_ids: HashSet<&str> = self
+            .content_results
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        let metadata_ids: HashSet<&str> = self
+            .filtered_indices
+            .iter()
+            .map(|&idx| self.sessions[idx].id.as_str())
+            .collect();
+
+        let mut entries = Vec::new();
+
+        for &idx in &self.filtered_indices {
+            let session = &self.sessions[idx];
+            let match_type = if content_ids.contains(session.id.as_str()) {
+                MatchType::Both
+            } else {
+                MatchType::Metadata
+            };
+            entries.push(DisplayEntry {
+                match_type,
+                source: DisplaySource::Sessions(idx),
+                timestamp: session.timestamp,
+            });
+        }
+
+        for (i, session) in self.content_results.iter().enumerate() {
+            if !metadata_ids.contains(session.id.as_str()) {
+                entries.push(DisplayEntry {
+                    match_type: MatchType::Content,
+                    source: DisplaySource::Content(i),
+                    timestamp: session.timestamp,
+                });
+            }
+        }
+
+        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        self.display_entries = entries;
+    }
+
+    /// Get the session referenced by a display entry.
+    pub fn display_session(&self, entry: &DisplayEntry) -> &Session {
+        match &entry.source {
+            DisplaySource::Sessions(idx) => &self.sessions[*idx],
+            DisplaySource::Content(idx) => &self.content_results[*idx],
         }
     }
 
-    /// Whether the app is currently showing deep search results.
-    pub fn is_deep_search(&self) -> bool {
-        self.original_sessions.is_some()
+    /// Cancel any in-progress content search and clear results.
+    pub fn cancel_content_search(&mut self) {
+        self.cancel_flag.store(true, Ordering::Relaxed);
+        self.search_receiver = None;
+        self.content_results.clear();
+        self.content_search_state = ContentSearchState::Idle;
+        self.last_keystroke = None;
     }
 
     /// Move the selection cursor down, clamped to bounds.
     pub fn move_down(&mut self) {
-        if !self.filtered_indices.is_empty() {
-            self.selected = (self.selected + 1).min(self.filtered_indices.len() - 1);
+        if !self.display_entries.is_empty() {
+            self.selected = (self.selected + 1).min(self.display_entries.len() - 1);
         }
     }
 
@@ -146,7 +234,6 @@ impl App {
             return;
         }
         if self.mode == Mode::Conversation || self.mode == Mode::ConversationSearch {
-            // Conversation view manages its own scroll
             return;
         }
         if self.selected < self.scroll_offset {
@@ -156,23 +243,27 @@ impl App {
         }
     }
 
-    /// Enter conversation viewer for a session.
-    pub fn enter_conversation(&mut self, session_idx: usize) {
-        let session = &self.sessions[session_idx];
+    /// Enter conversation viewer for a display entry.
+    pub fn enter_conversation(&mut self, display_idx: usize) {
+        if display_idx >= self.display_entries.len() {
+            return;
+        }
+        let entry = &self.display_entries[display_idx];
+        let session = self.display_session(entry).clone();
         let claude_home = get_claude_home();
-        let messages = load_conversation(&claude_home, session);
+        let messages = load_conversation(&claude_home, &session);
 
-        // Collect search terms from filter or deep search
-        let initial_search_terms = if !self.filter_query.is_empty() {
-            self.filter_query.split_whitespace().map(String::from).collect()
-        } else if let Some(query) = &self.deep_search_query {
-            query.split_whitespace().map(String::from).collect()
+        let initial_search_terms: Vec<String> = if !self.filter_query.is_empty() {
+            self.filter_query
+                .split_whitespace()
+                .map(String::from)
+                .collect()
         } else {
             Vec::new()
         };
 
         self.conversation = Some(ConversationState {
-            session_idx,
+            session,
             messages,
             lines: Vec::new(),
             scroll_offset: 0,
@@ -191,46 +282,51 @@ impl App {
     /// Leave conversation viewer and return to the list.
     pub fn leave_conversation(&mut self) {
         self.conversation = None;
-        self.mode = Mode::Browsing;
+        if !self.filter_query.is_empty() {
+            self.mode = Mode::Filtering;
+        } else {
+            self.mode = Mode::Browsing;
+        }
     }
 
     /// Set a status message that disappears after a few seconds.
+    #[allow(dead_code)]
     pub fn set_status(&mut self, msg: String) {
         self.status_message = Some((msg, Instant::now()));
     }
 
     /// Spinner character for the current tick.
     pub fn spinner_char(&self) -> char {
-        const FRAMES: &[char] = &['\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280F}'];
+        const FRAMES: &[char] = &[
+            '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}',
+            '\u{2827}', '\u{2807}', '\u{280F}',
+        ];
         FRAMES[self.spinner_tick % FRAMES.len()]
     }
 
-    /// Check if the background search has completed. Returns true if results were received.
-    pub fn poll_search(&mut self) -> bool {
+    /// Check if content search results have arrived.
+    pub fn poll_content_search(&mut self) -> bool {
         if let Some(rx) = &self.search_receiver {
             match rx.try_recv() {
                 Ok(results) => {
                     self.search_receiver = None;
-                    let query = self.deep_search_query.clone().unwrap_or_default();
-                    if results.is_empty() {
-                        self.set_status(format!("No sessions match \"{}\"", query));
-                        self.mode = Mode::Browsing;
-                        self.filter_query.clear();
-                    } else {
-                        let count = results.len();
-                        if self.original_sessions.is_none() {
-                            self.original_sessions = Some(std::mem::take(&mut self.sessions));
+                    let selected_id = self
+                        .display_entries
+                        .get(self.selected)
+                        .map(|e| self.display_session(e).id.clone());
+
+                    self.content_results = results;
+                    self.content_search_state = ContentSearchState::Complete;
+                    self.rebuild_display_entries();
+
+                    if let Some(id) = selected_id {
+                        if let Some(pos) = self
+                            .display_entries
+                            .iter()
+                            .position(|e| self.display_session(e).id == id)
+                        {
+                            self.selected = pos;
                         }
-                        self.sessions = results;
-                        self.filtered_indices = (0..self.sessions.len()).collect();
-                        self.selected = 0;
-                        self.scroll_offset = 0;
-                        self.mode = Mode::Browsing;
-                        self.filter_query.clear();
-                        self.set_status(format!(
-                            "Deep search: {} sessions match \"{}\"",
-                            count, query
-                        ));
                     }
                     true
                 }
@@ -240,13 +336,40 @@ impl App {
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.search_receiver = None;
-                    self.set_status("Search failed".to_string());
-                    self.mode = Mode::Browsing;
+                    self.content_search_state = ContentSearchState::Complete;
                     true
                 }
             }
         } else {
             false
+        }
+    }
+
+    /// Check if debounce period has elapsed and start content search if so.
+    pub fn check_debounce(&mut self) {
+        if self.content_search_state != ContentSearchState::Debouncing {
+            return;
+        }
+        if let Some(last) = self.last_keystroke {
+            if last.elapsed() >= Duration::from_millis(300) && !self.filter_query.is_empty() {
+                self.content_search_state = ContentSearchState::Searching;
+                self.spinner_tick = 0;
+
+                let cancel = Arc::new(AtomicBool::new(false));
+                self.cancel_flag = Arc::clone(&cancel);
+
+                let (tx, rx) = mpsc::channel();
+                self.search_receiver = Some(rx);
+
+                let claude_home = get_claude_home();
+                let index = Arc::clone(&self.session_index);
+                let pattern = self.filter_query.clone();
+                std::thread::spawn(move || {
+                    let results =
+                        search::deep_search_indexed(&claude_home, &pattern, &index, &cancel);
+                    let _ = tx.send(results);
+                });
+            }
         }
     }
 
@@ -267,7 +390,6 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Set up panic hook to restore terminal
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         let _ = disable_raw_mode();
@@ -288,13 +410,18 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         app.tick_status();
-        if app.mode == Mode::DeepSearching {
-            app.poll_search();
+
+        if app.content_search_state == ContentSearchState::Searching {
+            app.poll_content_search();
         }
+
+        if app.mode == Mode::Filtering {
+            app.check_debounce();
+        }
+
         terminal.draw(|frame| {
             let height = frame.area().height.saturating_sub(2) as usize;
-            let visible = height;
-            app.ensure_visible(visible);
+            app.ensure_visible(height);
             view::render(frame, &mut app);
         })?;
 
@@ -312,32 +439,8 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
                             break;
                         }
                     },
-                    Action::StartDeepSearchInput => {
-                        app.mode = Mode::DeepSearchInput;
-                        // Keep current filter_query so user can refine it
-                    }
-                    Action::DeepSearch(pattern) => {
-                        app.deep_search_query = Some(pattern.clone());
-                        app.mode = Mode::DeepSearching;
-                        app.spinner_tick = 0;
-
-                        let (tx, rx) = mpsc::channel();
-                        app.search_receiver = Some(rx);
-
-                        let claude_home = get_claude_home();
-                        let index = Arc::clone(&app.session_index);
-                        std::thread::spawn(move || {
-                            let results = search::deep_search_indexed(
-                                &claude_home, &pattern, &index,
-                            );
-                            let _ = tx.send(results);
-                        });
-                    }
                     Action::BackToList => {
                         app.leave_conversation();
-                    }
-                    Action::RestoreOriginal => {
-                        app.restore_original_sessions();
                     }
                     Action::Continue => {}
                 }
@@ -345,12 +448,10 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    // Print deferred command if clipboard failed
     if let Some(cmd) = deferred_command {
         println!("{cmd}");
     }

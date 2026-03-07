@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
@@ -36,6 +38,7 @@ pub fn deep_search_indexed(
     claude_home: &Path,
     pattern: &str,
     session_index: &HashMap<PathBuf, Session>,
+    cancel: &Arc<AtomicBool>,
 ) -> Vec<Session> {
     let ci_pattern = if pattern.starts_with("(?") {
         pattern.to_string()
@@ -77,6 +80,10 @@ pub fn deep_search_indexed(
     let mut sessions: Vec<Session> = jsonl_files
         .par_iter()
         .filter_map(|path| {
+            // Check cancellation flag
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
             if !file_matches(path, &re) {
                 return None;
             }
