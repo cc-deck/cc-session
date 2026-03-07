@@ -174,6 +174,19 @@ fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
             }
             Action::Continue
         }
+        KeyCode::PageDown => {
+            if let Some(conv) = &mut app.conversation {
+                let max = conv.lines.len().saturating_sub(conv.page_height);
+                conv.scroll_offset = (conv.scroll_offset + conv.page_height).min(max);
+            }
+            Action::Continue
+        }
+        KeyCode::PageUp => {
+            if let Some(conv) = &mut app.conversation {
+                conv.scroll_offset = conv.scroll_offset.saturating_sub(conv.page_height);
+            }
+            Action::Continue
+        }
         KeyCode::Char('j') | KeyCode::Down => {
             if let Some(conv) = &mut app.conversation {
                 let max = conv.lines.len().saturating_sub(conv.page_height);
@@ -236,8 +249,11 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
                 if !conv.search_query.is_empty() && !conv.match_positions.is_empty() {
                     conv.search_confirmed = true;
                     conv.current_match = 0;
-                    // Scroll to first match
-                    conv.scroll_offset = conv.match_positions[0].saturating_sub(2);
+                    // Center first match on screen
+                    let max = conv.lines.len().saturating_sub(conv.page_height);
+                    conv.scroll_offset = conv.match_positions[0]
+                        .saturating_sub(conv.page_height / 2)
+                        .min(max);
                 }
             }
             app.mode = Mode::Conversation;
@@ -267,7 +283,10 @@ fn jump_to_next_match(app: &mut App) {
             return;
         }
         conv.current_match = (conv.current_match + 1) % conv.match_positions.len();
-        conv.scroll_offset = conv.match_positions[conv.current_match].saturating_sub(2);
+        let max = conv.lines.len().saturating_sub(conv.page_height);
+        conv.scroll_offset = conv.match_positions[conv.current_match]
+            .saturating_sub(conv.page_height / 2)
+            .min(max);
     }
 }
 
@@ -281,6 +300,9 @@ fn jump_to_prev_match(app: &mut App) {
         } else {
             conv.current_match -= 1;
         }
-        conv.scroll_offset = conv.match_positions[conv.current_match].saturating_sub(2);
+        let max = conv.lines.len().saturating_sub(conv.page_height);
+        conv.scroll_offset = conv.match_positions[conv.current_match]
+            .saturating_sub(conv.page_height / 2)
+            .min(max);
     }
 }

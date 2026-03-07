@@ -139,9 +139,11 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
             // Build match positions
             conv.match_positions = find_match_positions(&conv.lines, &term_refs);
 
-            // Auto-scroll to first match on initial render
+            // Auto-scroll to center first match on screen
             if !conv.match_positions.is_empty() && conv.scroll_offset == 0 && !conv.search_confirmed {
-                conv.scroll_offset = conv.match_positions[0].saturating_sub(2);
+                let match_line = conv.match_positions[0];
+                let max = conv.lines.len().saturating_sub(height);
+                conv.scroll_offset = match_line.saturating_sub(height / 2).min(max);
             }
         }
     }
@@ -278,14 +280,14 @@ fn pre_render_conversation(
             MessageRole::Assistant => {
                 lines.push(Line::from(Span::styled(
                     "\u{25C0} Claude",
-                    Style::default().fg(Color::Green).bold(),
+                    Style::default().fg(Color::Yellow).bold(),
                 )));
             }
         }
 
         // Message body with word wrapping, code fence detection, and markdown
         let mut in_code_fence = false;
-        let heading_style = Style::default().fg(Color::Yellow).bold();
+        let heading_style = Style::default().fg(Color::Green).bold();
         let base_style = Style::default().fg(Color::Reset);
 
         for text_line in msg.text.lines() {
@@ -690,7 +692,7 @@ fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Spa
         }
     }
 
-    let highlight_style = base_style.bg(Color::Rgb(60, 50, 0));
+    let highlight_style = base_style.bg(Color::Rgb(100, 80, 0));
     let mut spans = Vec::new();
     let mut i = 0;
     while i < len {
