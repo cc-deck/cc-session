@@ -96,6 +96,8 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
+const MAX_CONTENT_WIDTH: u16 = 120;
+
 /// Render the conversation viewer.
 fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
@@ -103,24 +105,36 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(area);
 
-    let content_area = chunks[0];
+    let full_content_area = chunks[0];
     let status_area = chunks[1];
-    let width = content_area.width;
+
+    // Center content horizontally with max width
+    let terminal_width = full_content_area.width;
+    let content_width = terminal_width.min(MAX_CONTENT_WIDTH);
+    let left_margin = (terminal_width.saturating_sub(content_width)) / 2;
+
+    let content_area = Rect {
+        x: full_content_area.x + left_margin,
+        y: full_content_area.y,
+        width: content_width,
+        height: full_content_area.height,
+    };
+
     let height = content_area.height as usize;
 
     // Update page_height and check if we need to re-render lines
     if let Some(conv) = &mut app.conversation {
         conv.page_height = height;
 
-        if conv.rendered_width != width || conv.lines.is_empty() {
+        if conv.rendered_width != content_width || conv.lines.is_empty() {
             let search_terms: Vec<String> = if !conv.search_query.is_empty() {
                 conv.search_query.split_whitespace().map(String::from).collect()
             } else {
                 conv.initial_search_terms.clone()
             };
             let term_refs: Vec<&str> = search_terms.iter().map(|s| s.as_str()).collect();
-            conv.lines = pre_render_conversation(&conv.messages, width as usize, &term_refs);
-            conv.rendered_width = width;
+            conv.lines = pre_render_conversation(&conv.messages, content_width as usize, &term_refs);
+            conv.rendered_width = content_width;
 
             // Build match positions
             conv.match_positions = find_match_positions(&conv.lines, &term_refs);
@@ -145,7 +159,7 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
         frame.render_widget(paragraph, content_area);
     }
 
-    // Render status bar
+    // Render status bar (full width)
     render_conversation_status(frame, app, status_area);
 }
 
@@ -341,7 +355,8 @@ fn find_match_positions(lines: &[Line<'static>], terms: &[&str]) -> Vec<usize> {
     positions
 }
 
-/// Word-wrap a single line to fit within `width` characters.
+/// Word-wrap a single line to fit within `width` characters,
+/// breaking at word boundaries when possible.
 fn wrap_line(line: &str, width: usize) -> Vec<String> {
     if width == 0 {
         return vec![line.to_string()];
@@ -357,12 +372,40 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 
     let mut result = Vec::new();
     let mut pos = 0;
+
     while pos < chars.len() {
-        let end = (pos + width).min(chars.len());
-        let chunk: String = chars[pos..end].iter().collect();
-        result.push(chunk);
-        pos = end;
+        if pos + width >= chars.len() {
+            result.push(chars[pos..].iter().collect());
+            break;
+        }
+
+        // Look for a word boundary (space) to break at
+        let end = pos + width;
+        let mut break_at = end;
+
+        // Search backwards from the end for a space
+        for j in (pos..end).rev() {
+            if chars[j] == ' ' {
+                break_at = j + 1; // include the space in the current line
+                break;
+            }
+        }
+
+        // If no space found in the last ~40% of the line, force break at width
+        if break_at == end && (end - pos) > width / 2 {
+            break_at = end;
+        }
+
+        let chunk: String = chars[pos..break_at].iter().collect();
+        result.push(chunk.trim_end().to_string());
+        pos = break_at;
+
+        // Skip leading spaces on the next line
+        while pos < chars.len() && chars[pos] == ' ' {
+            pos += 1;
+        }
     }
+
     result
 }
 
