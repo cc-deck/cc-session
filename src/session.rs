@@ -151,7 +151,7 @@ pub fn clean_message_multiline(text: &str) -> String {
 }
 
 /// Strip XML-like tags from text, preserving other content.
-fn strip_tags(text: &str) -> String {
+pub fn strip_tags(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut inside_tag = false;
 

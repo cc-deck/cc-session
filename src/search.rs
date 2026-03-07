@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use regex::Regex;
 
-use crate::session::{clean_message, Session, SessionFileEntry};
+use crate::session::{clean_message, Session, SessionFileEntry, strip_tags};
 
 /// Build a file-path-to-session index from discovered sessions.
 ///
@@ -147,7 +147,11 @@ pub fn deep_search(claude_home: &Path, pattern: &str) -> Vec<Session> {
     sessions
 }
 
-/// Check if any line in a JSONL file matches the regex (content scan only).
+/// Check if any user/assistant message in a JSONL file matches the regex.
+///
+/// Only searches within user and assistant entries, and strips XML-like
+/// tags (system-reminder, local-command-caveat, etc.) before matching
+/// to avoid false positives from system-injected content.
 fn file_matches(path: &Path, re: &Regex) -> bool {
     let file = match fs::File::open(path) {
         Ok(f) => f,
@@ -160,7 +164,17 @@ fn file_matches(path: &Path, re: &Regex) -> bool {
             Ok(l) => l,
             Err(_) => continue,
         };
-        if re.is_match(&line) {
+        // Only check user/assistant entries (skip summary, result, etc.)
+        if !line.contains("\"type\":\"user\"") && !line.contains("\"type\":\"assistant\"") {
+            continue;
+        }
+        // Quick check: does the raw line match at all?
+        if !re.is_match(&line) {
+            continue;
+        }
+        // Strip XML tags (same as conversation viewer) and re-verify
+        let cleaned = strip_tags(&line);
+        if re.is_match(&cleaned) {
             return true;
         }
     }
