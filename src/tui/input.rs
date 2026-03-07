@@ -14,7 +14,8 @@ pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
         Mode::Filtering => handle_filter(app, key),
         Mode::DeepSearchInput => handle_deep_search_input(app, key),
         Mode::DeepSearching => handle_deep_searching(app, key),
-        Mode::Detail => handle_detail(app, key),
+        Mode::Conversation => handle_conversation(app, key),
+        Mode::ConversationSearch => handle_conversation_search(app, key),
     }
 }
 
@@ -29,7 +30,6 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Esc => {
             if app.is_deep_search() {
-                // Go back to deep search input so user can refine the query
                 app.filter_query = app.deep_search_query.clone().unwrap_or_default();
                 app.mode = Mode::DeepSearchInput;
                 Action::Continue
@@ -52,7 +52,7 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Enter => {
             if let Some(&idx) = app.filtered_indices.get(app.selected) {
-                Action::EnterDetail(idx)
+                Action::EnterConversation(idx)
             } else {
                 Action::Continue
             }
@@ -62,7 +62,6 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
-    // Ctrl-G: switch to deep search input mode
     if key.code == KeyCode::Char('g') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Action::StartDeepSearchInput;
     }
@@ -77,7 +76,7 @@ fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Enter => {
             if let Some(&idx) = app.filtered_indices.get(app.selected) {
                 app.mode = Mode::Browsing;
-                Action::EnterDetail(idx)
+                Action::EnterConversation(idx)
             } else {
                 Action::Continue
             }
@@ -108,10 +107,8 @@ fn handle_deep_search_input(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => {
             if app.is_deep_search() {
-                // We came from deep search results, restore original
                 Action::RestoreOriginal
             } else {
-                // We came from normal filter mode, go back there
                 app.mode = Mode::Filtering;
                 Action::Continue
             }
@@ -135,49 +132,177 @@ fn handle_deep_search_input(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-fn handle_deep_searching(_app: &mut App, key: KeyEvent) -> Action {
-    // Only allow Esc to cancel during search
+fn handle_deep_searching(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => {
-            // Drop the receiver to abandon results; restore browsing
-            _app.search_receiver = None;
-            _app.deep_search_query = None;
-            _app.mode = Mode::Browsing;
-            _app.filter_query.clear();
+            app.search_receiver = None;
+            app.deep_search_query = None;
+            app.mode = Mode::Browsing;
+            app.filter_query.clear();
             Action::Continue
         }
         _ => Action::Continue,
     }
 }
 
-fn handle_detail(app: &mut App, key: KeyEvent) -> Action {
-    use super::DetailButton;
-
+fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => Action::BackToList,
-        KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => {
-            if let Some(detail) = &mut app.detail {
-                detail.focused_button = match detail.focused_button {
-                    DetailButton::CopyAndExit => DetailButton::Back,
-                    DetailButton::Back => DetailButton::CopyAndExit,
-                };
+        KeyCode::Char(' ') => {
+            if let Some(conv) = &mut app.conversation {
+                let max = conv.lines.len().saturating_sub(conv.page_height);
+                conv.scroll_offset = (conv.scroll_offset + conv.page_height).min(max);
             }
             Action::Continue
         }
+        KeyCode::Char('b') => {
+            if let Some(conv) = &mut app.conversation {
+                conv.scroll_offset = conv.scroll_offset.saturating_sub(conv.page_height);
+            }
+            Action::Continue
+        }
+        KeyCode::Char('g') => {
+            if let Some(conv) = &mut app.conversation {
+                conv.scroll_offset = 0;
+            }
+            Action::Continue
+        }
+        KeyCode::Char('G') => {
+            if let Some(conv) = &mut app.conversation {
+                let max = conv.lines.len().saturating_sub(conv.page_height);
+                conv.scroll_offset = max;
+            }
+            Action::Continue
+        }
+        KeyCode::PageDown => {
+            if let Some(conv) = &mut app.conversation {
+                let max = conv.lines.len().saturating_sub(conv.page_height);
+                conv.scroll_offset = (conv.scroll_offset + conv.page_height).min(max);
+            }
+            Action::Continue
+        }
+        KeyCode::PageUp => {
+            if let Some(conv) = &mut app.conversation {
+                conv.scroll_offset = conv.scroll_offset.saturating_sub(conv.page_height);
+            }
+            Action::Continue
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if let Some(conv) = &mut app.conversation {
+                let max = conv.lines.len().saturating_sub(conv.page_height);
+                conv.scroll_offset = (conv.scroll_offset + 1).min(max);
+            }
+            Action::Continue
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if let Some(conv) = &mut app.conversation {
+                conv.scroll_offset = conv.scroll_offset.saturating_sub(1);
+            }
+            Action::Continue
+        }
+        KeyCode::Char('n') => {
+            jump_to_next_match(app);
+            Action::Continue
+        }
+        KeyCode::Char('N') => {
+            jump_to_prev_match(app);
+            Action::Continue
+        }
+        KeyCode::Char('/') => {
+            if let Some(conv) = &mut app.conversation {
+                conv.search_active = true;
+                conv.search_query.clear();
+                conv.search_confirmed = false;
+            }
+            app.mode = Mode::ConversationSearch;
+            Action::Continue
+        }
         KeyCode::Enter => {
-            if let Some(detail) = &app.detail {
-                match detail.focused_button {
-                    DetailButton::CopyAndExit => {
-                        let session = &app.sessions[detail.session_idx];
-                        let cmd = session.resume_command();
-                        Action::CopyCommand(cmd)
-                    }
-                    DetailButton::Back => Action::BackToList,
-                }
+            if let Some(conv) = &app.conversation {
+                let session = &app.sessions[conv.session_idx];
+                let cmd = session.resume_command();
+                Action::CopyCommand(cmd)
             } else {
                 Action::Continue
             }
         }
         _ => Action::Continue,
+    }
+}
+
+fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            if let Some(conv) = &mut app.conversation {
+                conv.search_active = false;
+                conv.search_query.clear();
+                conv.search_confirmed = false;
+                // Re-render with only initial terms
+                conv.rendered_width = 0; // force re-render
+            }
+            app.mode = Mode::Conversation;
+            Action::Continue
+        }
+        KeyCode::Enter => {
+            if let Some(conv) = &mut app.conversation {
+                conv.search_active = false;
+                if !conv.search_query.is_empty() && !conv.match_positions.is_empty() {
+                    conv.search_confirmed = true;
+                    conv.current_match = 0;
+                    // Center first match on screen
+                    let max = conv.lines.len().saturating_sub(conv.page_height);
+                    conv.scroll_offset = conv.match_positions[0]
+                        .saturating_sub(conv.page_height / 2)
+                        .min(max);
+                }
+            }
+            app.mode = Mode::Conversation;
+            Action::Continue
+        }
+        KeyCode::Backspace => {
+            if let Some(conv) = &mut app.conversation {
+                conv.search_query.pop();
+                conv.rendered_width = 0; // force re-render
+            }
+            Action::Continue
+        }
+        KeyCode::Char(c) => {
+            if let Some(conv) = &mut app.conversation {
+                conv.search_query.push(c);
+                conv.rendered_width = 0; // force re-render
+            }
+            Action::Continue
+        }
+        _ => Action::Continue,
+    }
+}
+
+fn jump_to_next_match(app: &mut App) {
+    if let Some(conv) = &mut app.conversation {
+        if conv.match_positions.is_empty() {
+            return;
+        }
+        conv.current_match = (conv.current_match + 1) % conv.match_positions.len();
+        let max = conv.lines.len().saturating_sub(conv.page_height);
+        conv.scroll_offset = conv.match_positions[conv.current_match]
+            .saturating_sub(conv.page_height / 2)
+            .min(max);
+    }
+}
+
+fn jump_to_prev_match(app: &mut App) {
+    if let Some(conv) = &mut app.conversation {
+        if conv.match_positions.is_empty() {
+            return;
+        }
+        if conv.current_match == 0 {
+            conv.current_match = conv.match_positions.len() - 1;
+        } else {
+            conv.current_match -= 1;
+        }
+        let max = conv.lines.len().saturating_sub(conv.page_height);
+        conv.scroll_offset = conv.match_positions[conv.current_match]
+            .saturating_sub(conv.page_height / 2)
+            .min(max);
     }
 }

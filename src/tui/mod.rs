@@ -13,10 +13,10 @@ use crossterm::terminal::{
 use ratatui::prelude::*;
 
 use crate::clipboard;
-use crate::discovery::{get_claude_home, load_session_prompts};
+use crate::discovery::{get_claude_home, load_conversation};
 use crate::filter::filter_sessions;
 use crate::search;
-use crate::session::{Session, UserPrompt};
+use crate::session::{ConversationMessage, Session};
 
 use input::handle_input;
 
@@ -27,14 +27,15 @@ pub enum Mode {
     Filtering,
     DeepSearchInput,
     DeepSearching,
-    Detail,
+    Conversation,
+    ConversationSearch,
 }
 
 /// What the input handler tells the main loop to do.
 pub enum Action {
     Continue,
     Quit,
-    EnterDetail(usize),
+    EnterConversation(usize),
     CopyCommand(String),
     BackToList,
     StartDeepSearchInput,
@@ -42,19 +43,20 @@ pub enum Action {
     RestoreOriginal,
 }
 
-/// Which button is focused in the detail view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DetailButton {
-    CopyAndExit,
-    Back,
-}
-
-/// State for the detail view of a single session.
-pub struct DetailState {
+/// State for the conversation viewer.
+pub struct ConversationState {
     pub session_idx: usize,
-    pub prompts: Vec<UserPrompt>,
+    pub messages: Vec<ConversationMessage>,
+    pub lines: Vec<Line<'static>>,
     pub scroll_offset: usize,
-    pub focused_button: DetailButton,
+    pub page_height: usize,
+    pub rendered_width: u16,
+    pub search_query: String,
+    pub search_active: bool,
+    pub search_confirmed: bool,
+    pub match_positions: Vec<usize>,
+    pub current_match: usize,
+    pub initial_search_terms: Vec<String>,
 }
 
 /// Application state for the TUI.
@@ -66,7 +68,7 @@ pub struct App {
     pub mode: Mode,
     pub filter_query: String,
     pub status_message: Option<(String, Instant)>,
-    pub detail: Option<DetailState>,
+    pub conversation: Option<ConversationState>,
     /// Original sessions saved before a deep search, so we can restore them.
     pub original_sessions: Option<Vec<Session>>,
     /// The query that produced the current deep search results.
@@ -88,7 +90,7 @@ impl App {
             mode: Mode::Browsing,
             filter_query: String::new(),
             status_message: None,
-            detail: None,
+            conversation: None,
             original_sessions: None,
             deep_search_query: None,
             search_receiver: None,
@@ -138,41 +140,52 @@ impl App {
         if visible_items == 0 {
             return;
         }
-        if self.mode == Mode::Detail {
-            // Detail view: scroll to show the bottom (newest prompts)
-            if let Some(d) = &mut self.detail {
-                let total = d.prompts.len();
-                if total > visible_items {
-                    d.scroll_offset = total - visible_items;
-                }
-            }
-        } else {
-            if self.selected < self.scroll_offset {
-                self.scroll_offset = self.selected;
-            } else if self.selected >= self.scroll_offset + visible_items {
-                self.scroll_offset = self.selected - visible_items + 1;
-            }
+        if self.mode == Mode::Conversation || self.mode == Mode::ConversationSearch {
+            // Conversation view manages its own scroll
+            return;
+        }
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        } else if self.selected >= self.scroll_offset + visible_items {
+            self.scroll_offset = self.selected - visible_items + 1;
         }
     }
 
-    /// Enter detail mode for a session.
-    pub fn enter_detail(&mut self, session_idx: usize) {
+    /// Enter conversation viewer for a session.
+    pub fn enter_conversation(&mut self, session_idx: usize) {
         let session = &self.sessions[session_idx];
         let claude_home = get_claude_home();
-        let prompts = load_session_prompts(&claude_home, session, 20);
+        let messages = load_conversation(&claude_home, session);
 
-        self.detail = Some(DetailState {
+        // Collect search terms from filter or deep search
+        let initial_search_terms = if !self.filter_query.is_empty() {
+            self.filter_query.split_whitespace().map(String::from).collect()
+        } else if let Some(query) = &self.deep_search_query {
+            query.split_whitespace().map(String::from).collect()
+        } else {
+            Vec::new()
+        };
+
+        self.conversation = Some(ConversationState {
             session_idx,
-            prompts,
+            messages,
+            lines: Vec::new(),
             scroll_offset: 0,
-            focused_button: DetailButton::CopyAndExit,
+            page_height: 20,
+            rendered_width: 0,
+            search_query: String::new(),
+            search_active: false,
+            search_confirmed: false,
+            match_positions: Vec::new(),
+            current_match: 0,
+            initial_search_terms,
         });
-        self.mode = Mode::Detail;
+        self.mode = Mode::Conversation;
     }
 
-    /// Leave detail mode and return to the list.
-    pub fn leave_detail(&mut self) {
-        self.detail = None;
+    /// Leave conversation viewer and return to the list.
+    pub fn leave_conversation(&mut self) {
+        self.conversation = None;
         self.mode = Mode::Browsing;
     }
 
@@ -273,17 +286,17 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
         }
         terminal.draw(|frame| {
             let height = frame.area().height.saturating_sub(2) as usize;
-            let visible = height; // 1 line per item in both list and detail
+            let visible = height;
             app.ensure_visible(visible);
-            view::render(frame, &app);
+            view::render(frame, &mut app);
         })?;
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 match handle_input(&mut app, key) {
                     Action::Quit => break,
-                    Action::EnterDetail(idx) => {
-                        app.enter_detail(idx);
+                    Action::EnterConversation(idx) => {
+                        app.enter_conversation(idx);
                     }
                     Action::CopyCommand(cmd) => match clipboard::copy_to_clipboard(&cmd) {
                         Ok(()) => break,
@@ -311,7 +324,7 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                     Action::BackToList => {
-                        app.leave_detail();
+                        app.leave_conversation();
                     }
                     Action::RestoreOriginal => {
                         app.restore_original_sessions();
