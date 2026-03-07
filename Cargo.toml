@@ -1,6 +1,6 @@
 [package]
 name = "cc-session"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.80.0"
 description = "Fast CLI tool for finding and resuming Claude Code sessions"
