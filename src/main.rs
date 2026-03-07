@@ -112,7 +112,8 @@ fn main() {
     }
 
     if let Some(pattern) = cli.grep {
-        let results = search::deep_search(&claude_home, &pattern);
+        let index = search::build_session_index(&claude_home, &sessions);
+        let results = search::deep_search_indexed(&claude_home, &pattern, &index);
         let code = scriptable::run_scriptable_prefiltered(&results, &pattern, cli.quick);
         std::process::exit(code);
     }

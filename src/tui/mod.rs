@@ -1,8 +1,10 @@
 pub mod input;
 pub mod view;
 
+use std::collections::HashMap;
 use std::io::stdout;
-use std::sync::mpsc;
+use std::path::PathBuf;
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event};
@@ -77,10 +79,12 @@ pub struct App {
     pub search_receiver: Option<mpsc::Receiver<Vec<Session>>>,
     /// Spinner frame counter for deep search progress.
     pub spinner_tick: usize,
+    /// Pre-built file-path-to-session index for fast deep search.
+    pub session_index: Arc<HashMap<PathBuf, Session>>,
 }
 
 impl App {
-    pub fn new(sessions: Vec<Session>) -> Self {
+    pub fn new(sessions: Vec<Session>, session_index: HashMap<PathBuf, Session>) -> Self {
         let filtered_indices: Vec<usize> = (0..sessions.len()).collect();
         Self {
             sessions,
@@ -95,6 +99,7 @@ impl App {
             deep_search_query: None,
             search_receiver: None,
             spinner_tick: 0,
+            session_index: Arc::new(session_index),
         }
     }
 
@@ -276,7 +281,9 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(sessions);
+    let claude_home = get_claude_home();
+    let session_index = search::build_session_index(&claude_home, &sessions);
+    let mut app = App::new(sessions, session_index);
     let mut deferred_command: Option<String> = None;
 
     loop {
@@ -318,8 +325,11 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
                         app.search_receiver = Some(rx);
 
                         let claude_home = get_claude_home();
+                        let index = Arc::clone(&app.session_index);
                         std::thread::spawn(move || {
-                            let results = search::deep_search(&claude_home, &pattern);
+                            let results = search::deep_search_indexed(
+                                &claude_home, &pattern, &index,
+                            );
                             let _ = tx.send(results);
                         });
                     }
