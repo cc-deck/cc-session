@@ -66,7 +66,15 @@ A developer performs a deep search for "ConnectionRefused", selects a matching s
 - What happens when a session has no messages? Display "No messages found in this session." in the viewer.
 - What happens when assistant messages contain very long code blocks? The text wraps at the terminal width (no horizontal scrolling).
 - What happens when JSONL parsing fails for some lines? Skip invalid lines silently, show parseable messages.
-- What happens when the terminal is resized? The view re-renders with the new dimensions.
+- What happens when the terminal is resized? The view re-renders with the new dimensions (lines are re-wrapped to new width).
+- What happens when a search has no matches? "No matches" is shown in the status bar and the search input remains active so the user can refine the query.
+
+## Clarifications
+
+### Session 2026-03-07
+
+- Q: How does Enter behave when search input is active vs normal mode? → A: Enter confirms search when typing; copies & exits otherwise.
+- Q: What happens when a search has no matches? → A: Show "No matches" in status bar, keep search input active for refinement.
 
 ## Requirements *(mandatory)*
 
@@ -81,7 +89,7 @@ A developer performs a deep search for "ConnectionRefused", selects a matching s
 - **FR-007**: The viewer MUST support incremental search via `/`: matches highlighted as the user types, Enter to confirm, n/N for next/previous match.
 - **FR-008**: Search matches MUST be highlighted in dark yellow (visible but not intrusive).
 - **FR-009**: When entering the viewer from filter or deep search results, the search terms MUST be pre-highlighted and the view MUST scroll to the first match if found.
-- **FR-010**: Pressing Enter MUST copy the resume command to clipboard and exit the TUI (same behavior as the previous detail view).
+- **FR-010**: Pressing Enter MUST copy the resume command to clipboard and exit the TUI, UNLESS search input is active (in which case Enter confirms the search per FR-007).
 - **FR-011**: Pressing Esc or `q` MUST return to the session list.
 - **FR-012**: A status bar at the bottom MUST show available key bindings.
 - **FR-013**: Internal markup tags MUST be stripped from displayed message content (same stripping as the session list).
