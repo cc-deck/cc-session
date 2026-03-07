@@ -1,6 +1,9 @@
+use std::sync::atomic::Ordering;
+use std::time::Instant;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{Action, App, Mode};
+use super::{Action, App, ContentSearchState, Mode};
 
 /// Handle a key event and return the resulting action.
 pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
@@ -12,8 +15,6 @@ pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
     match app.mode {
         Mode::Browsing => handle_browse(app, key),
         Mode::Filtering => handle_filter(app, key),
-        Mode::DeepSearchInput => handle_deep_search_input(app, key),
-        Mode::DeepSearching => handle_deep_searching(app, key),
         Mode::Conversation => handle_conversation(app, key),
         Mode::ConversationSearch => handle_conversation_search(app, key),
     }
@@ -21,22 +22,7 @@ pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
 
 fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
-        KeyCode::Char('q') => {
-            if app.is_deep_search() {
-                Action::RestoreOriginal
-            } else {
-                Action::Quit
-            }
-        }
-        KeyCode::Esc => {
-            if app.is_deep_search() {
-                app.filter_query = app.deep_search_query.clone().unwrap_or_default();
-                app.mode = Mode::DeepSearchInput;
-                Action::Continue
-            } else {
-                Action::Quit
-            }
-        }
+        KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
         KeyCode::Char('j') | KeyCode::Down => {
             app.move_down();
             Action::Continue
@@ -48,11 +34,14 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('/') => {
             app.mode = Mode::Filtering;
             app.filter_query.clear();
+            app.content_results.clear();
+            app.content_search_state = ContentSearchState::Idle;
+            app.rebuild_display_entries();
             Action::Continue
         }
         KeyCode::Enter => {
-            if let Some(&idx) = app.filtered_indices.get(app.selected) {
-                Action::EnterConversation(idx)
+            if app.selected < app.display_entries.len() {
+                Action::EnterConversation(app.selected)
             } else {
                 Action::Continue
             }
@@ -62,32 +51,43 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
-    if key.code == KeyCode::Char('g') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        return Action::StartDeepSearchInput;
-    }
-
     match key.code {
         KeyCode::Esc => {
-            app.mode = Mode::Browsing;
+            app.cancel_content_search();
             app.filter_query.clear();
             app.apply_filter();
+            app.mode = Mode::Browsing;
             Action::Continue
         }
         KeyCode::Enter => {
-            if let Some(&idx) = app.filtered_indices.get(app.selected) {
-                app.mode = Mode::Browsing;
-                Action::EnterConversation(idx)
+            if app.selected < app.display_entries.len() {
+                Action::EnterConversation(app.selected)
             } else {
                 Action::Continue
             }
         }
         KeyCode::Backspace => {
             app.filter_query.pop();
+            app.cancel_flag.store(true, Ordering::Relaxed);
+            app.search_receiver = None;
+            app.content_results.clear();
+            if app.filter_query.is_empty() {
+                app.content_search_state = ContentSearchState::Idle;
+                app.last_keystroke = None;
+            } else {
+                app.content_search_state = ContentSearchState::Debouncing;
+                app.last_keystroke = Some(Instant::now());
+            }
             app.apply_filter();
             Action::Continue
         }
         KeyCode::Char(c) => {
             app.filter_query.push(c);
+            app.cancel_flag.store(true, Ordering::Relaxed);
+            app.search_receiver = None;
+            app.content_results.clear();
+            app.content_search_state = ContentSearchState::Debouncing;
+            app.last_keystroke = Some(Instant::now());
             app.apply_filter();
             Action::Continue
         }
@@ -97,48 +97,6 @@ fn handle_filter(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Up => {
             app.move_up();
-            Action::Continue
-        }
-        _ => Action::Continue,
-    }
-}
-
-fn handle_deep_search_input(app: &mut App, key: KeyEvent) -> Action {
-    match key.code {
-        KeyCode::Esc => {
-            if app.is_deep_search() {
-                Action::RestoreOriginal
-            } else {
-                app.mode = Mode::Filtering;
-                Action::Continue
-            }
-        }
-        KeyCode::Enter => {
-            if !app.filter_query.is_empty() {
-                Action::DeepSearch(app.filter_query.clone())
-            } else {
-                Action::Continue
-            }
-        }
-        KeyCode::Backspace => {
-            app.filter_query.pop();
-            Action::Continue
-        }
-        KeyCode::Char(c) => {
-            app.filter_query.push(c);
-            Action::Continue
-        }
-        _ => Action::Continue,
-    }
-}
-
-fn handle_deep_searching(app: &mut App, key: KeyEvent) -> Action {
-    match key.code {
-        KeyCode::Esc => {
-            app.search_receiver = None;
-            app.deep_search_query = None;
-            app.mode = Mode::Browsing;
-            app.filter_query.clear();
             Action::Continue
         }
         _ => Action::Continue,
@@ -219,8 +177,7 @@ fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Enter => {
             if let Some(conv) = &app.conversation {
-                let session = &app.sessions[conv.session_idx];
-                let cmd = session.resume_command();
+                let cmd = conv.session.resume_command();
                 Action::CopyCommand(cmd)
             } else {
                 Action::Continue
@@ -237,7 +194,6 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
                 conv.search_active = false;
                 conv.search_query.clear();
                 conv.search_confirmed = false;
-                // Re-render with only initial terms
                 conv.rendered_width = 0; // force re-render
             }
             app.mode = Mode::Conversation;
@@ -249,7 +205,6 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
                 if !conv.search_query.is_empty() && !conv.match_positions.is_empty() {
                     conv.search_confirmed = true;
                     conv.current_match = 0;
-                    // Center first match on screen
                     let max = conv.lines.len().saturating_sub(conv.page_height);
                     conv.scroll_offset = conv.match_positions[0]
                         .saturating_sub(conv.page_height / 2)
