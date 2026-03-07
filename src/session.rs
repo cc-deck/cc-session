@@ -169,6 +169,21 @@ pub fn is_meta_message(text: &str) -> bool {
     trimmed.starts_with('[') && trimmed.ends_with(']') && !trimmed[1..].contains('[')
 }
 
+/// Role of a message in a conversation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageRole {
+    User,
+    Assistant,
+}
+
+/// A single message in a conversation (user or assistant).
+#[derive(Debug, Clone)]
+pub struct ConversationMessage {
+    pub role: MessageRole,
+    pub text: String,
+    pub timestamp: DateTime<Utc>,
+}
+
 /// A single user prompt extracted from a session JSONL file.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
