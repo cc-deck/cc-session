@@ -25,38 +25,57 @@ impl SyntaxHighlighter {
         }
     }
 
+    /// Find a syntax definition by language string (case-insensitive).
+    /// Tries: extension, name (case-insensitive), then common aliases.
+    fn find_syntax(&self, language: &str) -> Option<&syntect::parsing::SyntaxReference> {
+        let lang_lower = language.to_lowercase();
+
+        // Try by extension first (e.g., "rs", "py", "js")
+        if let Some(s) = self.syntax_set.find_syntax_by_extension(&lang_lower) {
+            return Some(s);
+        }
+
+        // Try case-insensitive name match (e.g., "python" -> "Python", "rust" -> "Rust")
+        for s in self.syntax_set.syntaxes() {
+            if s.name.to_lowercase() == lang_lower {
+                return Some(s);
+            }
+        }
+
+        // Try common aliases
+        let alias = match lang_lower.as_str() {
+            "js" | "javascript" => "JavaScript",
+            "ts" | "typescript" => "TypeScript",
+            "py" => "Python",
+            "rb" => "Ruby",
+            "rs" => "Rust",
+            "sh" | "bash" | "zsh" | "shell" => "Bourne Again Shell (bash)",
+            "yml" => "YAML",
+            "md" => "Markdown",
+            "dockerfile" => "Dockerfile",
+            "tf" | "hcl" => "Terraform",
+            "cs" | "csharp" => "C#",
+            "cpp" | "c++" => "C++",
+            "objc" | "objective-c" => "Objective-C",
+            "kt" | "kotlin" => "Kotlin",
+            "jsx" => "JavaScript (JSX)",
+            "tsx" => "TypeScript (TSX)",
+            _ => return None,
+        };
+        self.syntax_set.find_syntax_by_name(alias)
+    }
+
     /// Highlight code lines with the given language and theme.
-    /// Returns styled Lines, or None if the language is not recognized.
+    /// Returns styled Lines padded to `line_width`, or None if the language is not recognized.
     pub fn highlight_code(
         &self,
         code_lines: &[&str],
         language: &str,
         theme_name: &str,
         bg_color: RatColor,
+        line_width: usize,
     ) -> Option<Vec<Line<'static>>> {
-        // Try to find syntax by extension, then by name
-        let syntax = self
-            .syntax_set
-            .find_syntax_by_extension(language)
-            .or_else(|| self.syntax_set.find_syntax_by_name(language))
-            .or_else(|| {
-                // Try common aliases
-                let alias = match language {
-                    "js" => "JavaScript",
-                    "ts" => "TypeScript",
-                    "py" => "Python",
-                    "rb" => "Ruby",
-                    "rs" => "Rust",
-                    "sh" | "bash" | "zsh" => "Bourne Again Shell (bash)",
-                    "yml" => "YAML",
-                    "md" => "Markdown",
-                    "dockerfile" => "Dockerfile",
-                    "tf" => "Terraform",
-                    _ => return None,
-                };
-                self.syntax_set.find_syntax_by_name(alias)
-            })?;
-
+        let syntax = self.find_syntax(language)?;
         let theme = self.theme_set.themes.get(theme_name)?;
         let mut highlighter = HighlightLines::new(syntax, theme);
 
@@ -67,17 +86,28 @@ impl SyntaxHighlighter {
                 .ok()?;
 
             let mut spans: Vec<Span<'static>> = Vec::new();
+            let mut line_len = 0usize;
             for (style, text) in regions {
                 let fg = RatColor::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+                line_len += text.chars().count();
                 spans.push(Span::styled(
                     text.to_string(),
                     Style::default().fg(fg).bg(bg_color),
                 ));
             }
 
-            if spans.is_empty() {
+            // Pad to full width so background spans the entire block
+            if line_len < line_width {
                 spans.push(Span::styled(
-                    code_line.to_string(),
+                    " ".repeat(line_width - line_len),
+                    Style::default().bg(bg_color),
+                ));
+            }
+
+            if spans.is_empty() {
+                let pad = " ".repeat(line_width.saturating_sub(code_line.chars().count()));
+                spans.push(Span::styled(
+                    format!("{}{}", code_line, pad),
                     Style::default().bg(bg_color),
                 ));
             }

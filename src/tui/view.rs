@@ -364,18 +364,21 @@ fn pre_render_conversation(
                             lang,
                             theme.syntect_theme,
                             theme.code_block_bg,
+                            width,
                         )
                     });
 
                     if let Some(hl_lines) = highlighted {
                         lines.extend(hl_lines);
                     } else {
-                        // Fallback: single-color code
+                        // Fallback: single-color code, padded to full width
                         for cl in &code_buffer {
                             let wrapped = wrap_line(cl, width);
                             for wl in wrapped {
+                                let char_len = wl.chars().count();
+                                let pad = " ".repeat(width.saturating_sub(char_len));
                                 lines.push(Line::from(vec![Span::styled(
-                                    wl,
+                                    format!("{}{}", wl, pad),
                                     fallback_code_style,
                                 )]));
                             }
