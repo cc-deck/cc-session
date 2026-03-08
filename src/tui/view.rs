@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::session::{ConversationMessage, MessageRole};
 
+use super::table;
 use super::{App, ContentSearchState, MatchType, Mode};
 
 /// Render the full TUI frame.
@@ -29,9 +30,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
     let width = area.width as usize;
     let height = area.height as usize;
-
     let visible_items = height;
-
     let mut lines: Vec<Line> = Vec::new();
 
     let terms = search_terms(app);
@@ -50,7 +49,6 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         let right = format!("{}  {}", session.project_name, time_ago);
         let right_len = right.len();
 
-        // Content-only indicator: dimmed dot prefix
         let (cursor, cursor_len) = if is_selected {
             if entry.match_type == MatchType::Content {
                 ("\u{25B8}\u{00B7}", 3)
@@ -66,33 +64,32 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         let max_msg_len = width.saturating_sub(cursor_len + right_len + 2);
         let msg = truncate_str(&session.first_message, max_msg_len);
         let msg_len = msg.chars().count();
-
         let pad = width.saturating_sub(cursor_len + msg_len + right_len);
         let padding = " ".repeat(pad);
 
         let msg_style = if is_selected {
             Style::default().fg(Color::White)
         } else {
-            Style::default().fg(Color::Reset)
+            Style::default().fg(app.theme.text)
         };
 
-        let dim = Style::default().fg(Color::DarkGray);
+        let dim = Style::default().fg(app.theme.text_dim);
 
         let cursor_style = if entry.match_type == MatchType::Content {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(app.theme.text_dim)
         } else {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(app.theme.cursor_color)
         };
 
         let mut spans = vec![Span::styled(cursor, cursor_style)];
-        spans.extend(highlight_terms(&msg, &term_refs, msg_style));
+        spans.extend(highlight_terms(&msg, &term_refs, msg_style, &app.theme));
         spans.push(Span::raw(padding));
         spans.push(Span::styled(right, dim));
 
         let line = Line::from(spans);
 
         if is_selected {
-            lines.push(line.patch_style(Style::default().bg(Color::Rgb(30, 30, 50))));
+            lines.push(line.patch_style(Style::default().bg(app.theme.selected_bg)));
         } else {
             lines.push(line);
         }
@@ -106,7 +103,7 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
             app.display_entries.len(),
             app.sessions.len()
         ))
-        .title_style(Style::default().fg(Color::Cyan).bold());
+        .title_style(Style::default().fg(app.theme.cursor_color).bold());
 
     let paragraph = Paragraph::new(text).block(block);
     frame.render_widget(paragraph, area);
@@ -150,8 +147,13 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
                 conv.initial_search_terms.clone()
             };
             let term_refs: Vec<&str> = search_terms.iter().map(|s| s.as_str()).collect();
-            conv.lines =
-                pre_render_conversation(&conv.messages, content_width as usize, &term_refs);
+            conv.lines = pre_render_conversation(
+                &conv.messages,
+                content_width as usize,
+                &term_refs,
+                &app.theme,
+                &app.syntax_highlighter,
+            );
             conv.rendered_width = content_width;
 
             conv.match_positions = find_match_positions(&conv.lines, &term_refs);
@@ -185,6 +187,7 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 /// Render the conversation viewer status bar.
 fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
     let content = if let Some(conv) = &app.conversation {
+        let dim = Style::default().fg(app.theme.text_dim);
         if conv.search_active {
             let match_info = if conv.search_query.is_empty() {
                 String::new()
@@ -201,23 +204,26 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled(
                     " / ",
-                    Style::default().fg(Color::Black).bg(Color::Cyan).bold(),
+                    Style::default()
+                        .fg(app.theme.status_label_fg)
+                        .bg(app.theme.status_label_bg)
+                        .bold(),
                 ),
                 Span::styled(" ", Style::default()),
                 Span::styled(&conv.search_query, Style::default().fg(Color::White)),
-                Span::styled("\u{258E}", Style::default().fg(Color::Cyan)),
-                Span::styled(match_info, Style::default().fg(Color::DarkGray)),
+                Span::styled("\u{258E}", Style::default().fg(app.theme.status_label_bg)),
+                Span::styled(match_info, dim),
                 Span::raw("  "),
-                Span::styled(
-                    "Enter confirm  Esc cancel",
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled("Enter confirm  Esc cancel", dim),
             ])
         } else if conv.search_confirmed && !conv.match_positions.is_empty() {
             Line::from(vec![
                 Span::styled(
                     " SESSION ",
-                    Style::default().fg(Color::Black).bg(Color::Green).bold(),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Green)
+                        .bold(),
                 ),
                 Span::styled(
                     format!(" {} ", conv.session.project_name),
@@ -230,19 +236,22 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                         conv.current_match + 1,
                         conv.match_positions.len()
                     ),
-                    Style::default().fg(Color::DarkGray),
+                    dim,
                 ),
                 Span::raw("  "),
                 Span::styled(
                     "n/N next/prev  / search  Enter copy & exit  Esc back",
-                    Style::default().fg(Color::DarkGray),
+                    dim,
                 ),
             ])
         } else {
             Line::from(vec![
                 Span::styled(
                     " SESSION ",
-                    Style::default().fg(Color::Black).bg(Color::Green).bold(),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Green)
+                        .bold(),
                 ),
                 Span::styled(
                     format!(" {} ", conv.session.project_name),
@@ -251,7 +260,7 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 Span::raw(" "),
                 Span::styled(
                     "Space/b scroll  g/G top/bottom  / search  Enter copy & exit  Esc back",
-                    Style::default().fg(Color::DarkGray),
+                    dim,
                 ),
             ])
         }
@@ -259,19 +268,25 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
         Line::from("")
     };
 
-    let bar = Paragraph::new(content).style(Style::default().bg(Color::Rgb(20, 20, 30)));
+    let bar =
+        Paragraph::new(content).style(Style::default().bg(app.theme.status_bar_bg));
     frame.render_widget(bar, area);
 }
 
-/// Pre-render conversation messages into terminal lines with word wrapping.
+/// Pre-render conversation messages into terminal lines with word wrapping,
+/// syntax highlighting, table rendering, and role header bars.
 fn pre_render_conversation(
     messages: &[ConversationMessage],
     width: usize,
     search_terms: &[&str],
+    theme: &crate::theme::Theme,
+    syntax_highlighter: &super::syntax::SyntaxHighlighter,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let dim = Style::default().fg(Color::DarkGray);
-    let code_style = Style::default().fg(Color::Rgb(130, 170, 200));
+    let dim = Style::default().fg(theme.text_dim);
+    let fallback_code_style = Style::default()
+        .fg(Color::Rgb(130, 170, 200))
+        .bg(theme.code_block_bg);
 
     if messages.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -282,79 +297,238 @@ fn pre_render_conversation(
     }
 
     for msg in messages {
+        // Full-width role header bar with integrated timestamp
         let delta = Utc::now().signed_duration_since(msg.timestamp);
         let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
+
+        let (label, header_bg, header_fg): (&str, Color, Color) = match msg.role {
+            MessageRole::User => (
+                " \u{25B6} You ",
+                theme.user_header_bg,
+                theme.user_header_fg,
+            ),
+            MessageRole::Assistant => (
+                " \u{25C0} Claude ",
+                theme.assistant_header_bg,
+                theme.assistant_header_fg,
+            ),
+        };
+
         let time_str = format!(" {} ", time_ago);
-        let dash_count = width.saturating_sub(time_str.len());
-        let separator = "\u{2500}".repeat(dash_count);
+        let label_len = label.chars().count();
+        let time_len = time_str.chars().count();
+        let pad_len = width.saturating_sub(label_len + time_len);
+        let padding = " ".repeat(pad_len);
+
+        let header_style = Style::default().fg(header_fg).bg(header_bg).bold();
+        let header_dim = Style::default().fg(header_fg).bg(header_bg);
         lines.push(Line::from(vec![
-            Span::styled(separator, dim),
-            Span::styled(time_str, dim),
+            Span::styled(label, header_style),
+            Span::styled(padding, Style::default().bg(header_bg)),
+            Span::styled(time_str, header_dim),
         ]));
 
-        match msg.role {
-            MessageRole::User => {
-                lines.push(Line::from(Span::styled(
-                    "\u{25B6} You",
-                    Style::default().fg(Color::Cyan).bold(),
-                )));
-            }
-            MessageRole::Assistant => {
-                lines.push(Line::from(Span::styled(
-                    "\u{25C0} Claude",
-                    Style::default().fg(Color::Yellow).bold(),
-                )));
-            }
-        }
+        // Determine message body background
+        let msg_bg = match msg.role {
+            MessageRole::User => Some(theme.user_message_bg),
+            MessageRole::Assistant => None,
+        };
 
+        let base_style = if let Some(bg) = msg_bg {
+            Style::default().fg(theme.text).bg(bg)
+        } else {
+            Style::default().fg(theme.text)
+        };
+        let heading_style = Style::default().fg(theme.heading).bold();
+
+        // Collect message lines for table detection
+        let text_lines: Vec<&str> = msg.text.lines().collect();
+        let mut i = 0;
         let mut in_code_fence = false;
-        let heading_style = Style::default().fg(Color::Green).bold();
-        let base_style = Style::default().fg(Color::Reset);
+        let mut code_lang: Option<String> = None;
+        let mut code_buffer: Vec<String> = Vec::new();
 
-        for text_line in msg.text.lines() {
+        while i < text_lines.len() {
+            let text_line = text_lines[i];
             let trimmed = text_line.trim();
+
+            // Code fence handling
             if trimmed.starts_with("```") {
-                in_code_fence = !in_code_fence;
-                let wrapped = wrap_line(text_line, width);
-                for wl in wrapped {
-                    lines.push(Line::from(vec![Span::styled(wl, code_style)]));
+                if in_code_fence {
+                    // Closing fence: render buffered code
+                    let code_refs: Vec<&str> =
+                        code_buffer.iter().map(|s| s.as_str()).collect();
+                    let highlighted = code_lang.as_ref().and_then(|lang| {
+                        syntax_highlighter.highlight_code(
+                            &code_refs,
+                            lang,
+                            theme.syntect_theme,
+                            theme.code_block_bg,
+                            width,
+                        )
+                    });
+
+                    if let Some(hl_lines) = highlighted {
+                        // Language label above code block
+                        if let Some(ref lang) = code_lang {
+                            let label = format!(" {} ", lang);
+                            let pad = " ".repeat(width.saturating_sub(label.len()));
+                            lines.push(Line::from(vec![
+                                Span::styled(label, Style::default().fg(theme.text_dim).bg(theme.code_block_bg).italic()),
+                                Span::styled(pad, Style::default().bg(theme.code_block_bg)),
+                            ]));
+                        }
+                        lines.extend(hl_lines);
+                    } else {
+                        // Fallback: single-color code, padded to full width
+                        for cl in &code_buffer {
+                            let wrapped = wrap_line(cl, width);
+                            for wl in wrapped {
+                                let char_len = wl.chars().count();
+                                let pad = " ".repeat(width.saturating_sub(char_len));
+                                lines.push(Line::from(vec![Span::styled(
+                                    format!("{}{}", wl, pad),
+                                    fallback_code_style,
+                                )]));
+                            }
+                        }
+                    }
+
+                    code_buffer.clear();
+                    code_lang = None;
+                    in_code_fence = false;
+                } else {
+                    // Opening fence: extract language
+                    in_code_fence = true;
+                    code_lang =
+                        super::syntax::extract_language(trimmed);
                 }
+                i += 1;
                 continue;
             }
 
             if in_code_fence {
-                let wrapped = wrap_line(text_line, width);
-                for wl in wrapped {
-                    lines.push(Line::from(vec![Span::styled(wl, code_style)]));
+                code_buffer.push(text_line.to_string());
+                i += 1;
+                continue;
+            }
+
+            // Table detection: collect consecutive pipe lines
+            if table::is_table_line(trimmed) {
+                let mut table_lines: Vec<&str> = vec![text_line];
+                let mut j = i + 1;
+                while j < text_lines.len() && table::is_table_line(text_lines[j].trim()) {
+                    table_lines.push(text_lines[j]);
+                    j += 1;
                 }
-            } else if trimmed.starts_with('#') {
+
+                if table_lines.len() >= 2 {
+                    let table_refs: Vec<&str> = table_lines.to_vec();
+                    if let Some(rendered) =
+                        table::render_table_lines(&table_refs, width, theme)
+                    {
+                        // Apply message background to table lines if user message
+                        for tl in rendered {
+                            if let Some(bg) = msg_bg {
+                                lines.push(tl.patch_style(Style::default().bg(bg)));
+                            } else {
+                                lines.push(tl);
+                            }
+                        }
+                        i = j;
+                        continue;
+                    }
+                }
+                // Fall through to normal rendering if table parsing failed
+            }
+
+            // Markdown heading
+            if trimmed.starts_with('#') {
                 let level = trimmed.chars().take_while(|&c| c == '#').count();
                 let heading_text = trimmed[level..].trim_start();
                 let prefix = "\u{2500}".repeat(level.min(3));
-                let wrapped = wrap_line(heading_text, width.saturating_sub(prefix.len() + 1));
-                for (i, wl) in wrapped.into_iter().enumerate() {
+                let wrapped =
+                    wrap_line(heading_text, width.saturating_sub(prefix.len() + 1));
+                for (idx, wl) in wrapped.into_iter().enumerate() {
                     let mut spans = Vec::new();
-                    if i == 0 {
+                    if idx == 0 {
                         spans.push(Span::styled(format!("{} ", prefix), dim));
                     }
-                    spans.extend(render_markdown_inline(&wl, heading_style, search_terms));
-                    lines.push(Line::from(spans));
+                    spans.extend(render_markdown_inline(
+                        &wl,
+                        heading_style,
+                        search_terms,
+                        theme,
+                    ));
+                    let line = Line::from(spans);
+                    if let Some(bg) = msg_bg {
+                        lines.push(line.patch_style(Style::default().bg(bg)));
+                    } else {
+                        lines.push(line);
+                    }
                 }
-            } else if trimmed.is_empty() {
-                lines.push(Line::from(""));
-            } else {
-                let wrapped = wrap_line(text_line, width);
+                i += 1;
+                continue;
+            }
+
+            // Empty line
+            if trimmed.is_empty() {
+                if let Some(bg) = msg_bg {
+                    let pad = " ".repeat(width);
+                    lines.push(Line::from(Span::styled(
+                        pad,
+                        Style::default().bg(bg),
+                    )));
+                } else {
+                    lines.push(Line::from(""));
+                }
+                i += 1;
+                continue;
+            }
+
+            // Normal text with markdown inline rendering
+            let wrapped = wrap_line(text_line, width);
+            for wl in wrapped {
+                let spans =
+                    render_markdown_inline(&wl, base_style, search_terms, theme);
+                let line = Line::from(spans);
+                if let Some(bg) = msg_bg {
+                    if !has_bg_set(&line) {
+                        lines.push(
+                            line.patch_style(Style::default().bg(bg)),
+                        );
+                    } else {
+                        lines.push(line);
+                    }
+                } else {
+                    lines.push(line);
+                }
+            }
+            i += 1;
+        }
+
+        // Handle unclosed code fence
+        if in_code_fence {
+            for cl in &code_buffer {
+                let wrapped = wrap_line(cl, width);
                 for wl in wrapped {
-                    let spans = render_markdown_inline(&wl, base_style, search_terms);
-                    lines.push(Line::from(spans));
+                    lines.push(Line::from(vec![Span::styled(wl, fallback_code_style)]));
                 }
             }
         }
 
+        // Blank line after message
         lines.push(Line::from(""));
     }
 
     lines
+}
+
+/// Check if any span in a line already has a background set.
+fn has_bg_set(line: &Line) -> bool {
+    line.spans
+        .iter()
+        .any(|s| s.style.bg.is_some())
 }
 
 /// Find line indices that contain search term matches.
@@ -427,6 +601,7 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 
 /// Render the status/help bar at the bottom.
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let dim = Style::default().fg(app.theme.text_dim);
     let content = match app.mode {
         Mode::Filtering => {
             let match_count = app.display_entries.len();
@@ -450,17 +625,23 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled(
                     " SEARCH ",
-                    Style::default().fg(Color::Black).bg(Color::Cyan).bold(),
+                    Style::default()
+                        .fg(app.theme.status_label_fg)
+                        .bg(app.theme.status_label_bg)
+                        .bold(),
                 ),
                 Span::styled(" ", Style::default()),
-                Span::styled(&app.filter_query, Style::default().fg(Color::White)),
-                Span::styled("\u{258E}", Style::default().fg(Color::Cyan)),
-                Span::styled(match_info, Style::default().fg(Color::DarkGray)),
-                Span::raw("  "),
                 Span::styled(
-                    "Esc cancel  Enter select",
-                    Style::default().fg(Color::DarkGray),
+                    &app.filter_query,
+                    Style::default().fg(app.theme.text),
                 ),
+                Span::styled(
+                    "\u{258E}",
+                    Style::default().fg(app.theme.status_label_bg),
+                ),
+                Span::styled(match_info, dim),
+                Span::raw("  "),
+                Span::styled("Esc cancel  Enter select", dim),
             ])
         }
         Mode::Conversation | Mode::ConversationSearch => Line::from(""),
@@ -472,20 +653,21 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 )])
             } else {
                 Line::from(vec![
-                    Span::styled(" / ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("search", Style::default().fg(Color::DarkGray)),
+                    Span::styled(" / ", dim),
+                    Span::styled("search", dim),
                     Span::raw("  "),
-                    Span::styled("Enter ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("detail", Style::default().fg(Color::DarkGray)),
+                    Span::styled("Enter ", dim),
+                    Span::styled("detail", dim),
                     Span::raw("  "),
-                    Span::styled("q ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("quit", Style::default().fg(Color::DarkGray)),
+                    Span::styled("q ", dim),
+                    Span::styled("quit", dim),
                 ])
             }
         }
     };
 
-    let bar = Paragraph::new(content).style(Style::default().bg(Color::Rgb(20, 20, 30)));
+    let bar =
+        Paragraph::new(content).style(Style::default().bg(app.theme.status_bar_bg));
     frame.render_widget(bar, area);
 }
 
@@ -508,6 +690,7 @@ fn render_markdown_inline<'a>(
     text: &str,
     base_style: Style,
     search_terms: &[&str],
+    theme: &crate::theme::Theme,
 ) -> Vec<Span<'a>> {
     let bold_style = base_style.bold();
     let italic_style = base_style.italic();
@@ -592,13 +775,18 @@ fn render_markdown_inline<'a>(
 
     let mut result: Vec<Span<'a>> = Vec::new();
     for (segment, style) in spans {
-        result.extend(highlight_terms(&segment, search_terms, style));
+        result.extend(highlight_terms(&segment, search_terms, style, theme));
     }
     result
 }
 
 /// Split text into spans, highlighting portions that match any search terms.
-fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Span<'a>> {
+fn highlight_terms<'a>(
+    text: &str,
+    terms: &[&str],
+    base_style: Style,
+    theme: &crate::theme::Theme,
+) -> Vec<Span<'a>> {
     if terms.is_empty() {
         return vec![Span::styled(text.to_string(), base_style)];
     }
@@ -622,7 +810,7 @@ fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Spa
         }
     }
 
-    let highlight_style = base_style.bg(Color::Rgb(100, 80, 0));
+    let highlight_style = base_style.bg(theme.search_highlight_bg);
     let mut spans = Vec::new();
     let mut i = 0;
     while i < len {
@@ -632,7 +820,11 @@ fn highlight_terms<'a>(text: &str, terms: &[&str], base_style: Style) -> Vec<Spa
             i += 1;
         }
         let segment = &text[run_start..i];
-        let style = if is_match { highlight_style } else { base_style };
+        let style = if is_match {
+            highlight_style
+        } else {
+            base_style
+        };
         spans.push(Span::styled(segment.to_string(), style));
     }
 

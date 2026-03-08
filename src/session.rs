@@ -128,6 +128,64 @@ impl<'de> Deserialize<'de> for StringOrArray {
     }
 }
 
+/// Known system-injected XML tag names whose entire content blocks should be stripped.
+const SYSTEM_TAGS: &[&str] = &[
+    "system-reminder",
+    "local-command-caveat",
+    "local-command-stdout",
+    "command-name",
+    "command-message",
+    "command-args",
+    "user-prompt-submit-hook",
+    "available-deferred-tools",
+    "rosa-auth",
+    "rosa-profile",
+    "sdd-context",
+    "skill-enforcement",
+    "fast_mode_info",
+    "task-notification",
+    "task-id",
+    "plugin-name",
+    "output-file",
+    "antml_thinking",
+    "antml_function_calls",
+];
+
+/// Strip known system-injected XML tags AND their content.
+///
+/// Unlike `strip_tags` which only removes tag delimiters, this removes
+/// entire content blocks for known system tags. For example:
+/// `<local-command-caveat>Caveat text...</local-command-caveat>` is fully removed.
+/// Handles tags with attributes like `<rosa-profile name="aaet">`.
+pub fn strip_system_blocks(text: &str) -> String {
+    let mut result = text.to_string();
+
+    for &tag in SYSTEM_TAGS {
+        let open_prefix = format!("<{}", tag);
+        let close_tag = format!("</{}>", tag);
+
+        while let Some(pos) = result.find(&open_prefix) {
+            // Verify the match is a real tag (followed by > or space for attributes)
+            let after = &result[pos + open_prefix.len()..];
+            if !after.starts_with('>') && !after.starts_with(' ') {
+                break;
+            }
+            let start = pos;
+
+            if let Some(rel_end) = result[start..].find(&close_tag) {
+                let abs_end = start + rel_end + close_tag.len();
+                result.drain(start..abs_end);
+            } else {
+                // Unclosed tag, remove from opening tag to end of string
+                result.truncate(start);
+                break;
+            }
+        }
+    }
+
+    result
+}
+
 /// Strip XML-like markup tags from a message and return cleaned single-line text.
 ///
 /// Claude Code injects tags like `<command-message>`, `<command-name>`,
@@ -135,16 +193,17 @@ impl<'de> Deserialize<'de> for StringOrArray {
 /// These are internal markers, not user-visible content.
 /// This version collapses all whitespace into a single line (for list display).
 pub fn clean_message(text: &str) -> String {
-    let stripped = strip_tags(text);
+    let system_stripped = strip_system_blocks(text);
+    let stripped = strip_tags(&system_stripped);
     stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Strip XML-like markup tags but preserve line breaks.
+/// Strip system blocks and XML markup tags, preserving line breaks.
 ///
 /// Used for conversation viewer where markdown structure matters.
 pub fn clean_message_multiline(text: &str) -> String {
-    let stripped = strip_tags(text);
-    // Trim each line individually, remove completely blank lines at start/end
+    let system_stripped = strip_system_blocks(text);
+    let stripped = strip_tags(&system_stripped);
     let lines: Vec<&str> = stripped.lines().map(|l| l.trim_end()).collect();
     let result = lines.join("\n");
     result.trim().to_string()

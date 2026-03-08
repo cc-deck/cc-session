@@ -1,4 +1,6 @@
 pub mod input;
+pub mod syntax;
+pub mod table;
 pub mod view;
 
 use std::collections::{HashMap, HashSet};
@@ -21,6 +23,7 @@ use crate::discovery::{get_claude_home, load_conversation};
 use crate::filter::filter_sessions;
 use crate::search;
 use crate::session::{ConversationMessage, Session};
+use crate::theme::Theme;
 
 use input::handle_input;
 
@@ -115,10 +118,14 @@ pub struct App {
     pub spinner_tick: usize,
     /// Pre-built file-path-to-session index for fast content search.
     pub session_index: Arc<HashMap<PathBuf, Session>>,
+    /// Active color theme.
+    pub theme: Theme,
+    /// Syntax highlighter for code blocks.
+    pub syntax_highlighter: syntax::SyntaxHighlighter,
 }
 
 impl App {
-    pub fn new(sessions: Vec<Session>, session_index: HashMap<PathBuf, Session>) -> Self {
+    pub fn new(sessions: Vec<Session>, session_index: HashMap<PathBuf, Session>, theme: Theme) -> Self {
         let filtered_indices: Vec<usize> = (0..sessions.len()).collect();
         let display_entries: Vec<DisplayEntry> = filtered_indices
             .iter()
@@ -145,6 +152,8 @@ impl App {
             search_receiver: None,
             spinner_tick: 0,
             session_index: Arc::new(session_index),
+            theme,
+            syntax_highlighter: syntax::SyntaxHighlighter::new(),
         }
     }
 
@@ -384,7 +393,7 @@ impl App {
 }
 
 /// Run the interactive TUI session picker.
-pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::error::Error>> {
     if sessions.is_empty() {
         eprintln!("No sessions found.");
         return Ok(());
@@ -405,7 +414,7 @@ pub fn run(sessions: Vec<Session>) -> Result<(), Box<dyn std::error::Error>> {
 
     let claude_home = get_claude_home();
     let session_index = search::build_session_index(&claude_home, &sessions);
-    let mut app = App::new(sessions, session_index);
+    let mut app = App::new(sessions, session_index, theme);
     let mut deferred_command: Option<String> = None;
 
     loop {
