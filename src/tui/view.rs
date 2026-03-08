@@ -201,6 +201,13 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 )
             };
 
+            // Show search query with "selected" appearance when replacing
+            let query_style = if conv.search_replacing {
+                Style::default().fg(Color::White).bg(app.theme.status_label_bg)
+            } else {
+                Style::default().fg(Color::White)
+            };
+
             Line::from(vec![
                 Span::styled(
                     " / ",
@@ -210,7 +217,7 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                         .bold(),
                 ),
                 Span::styled(" ", Style::default()),
-                Span::styled(&conv.search_query, Style::default().fg(Color::White)),
+                Span::styled(&conv.search_query, query_style),
                 Span::styled("\u{258E}", Style::default().fg(app.theme.status_label_bg)),
                 Span::styled(match_info, dim),
                 Span::raw("  "),

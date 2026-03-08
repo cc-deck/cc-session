@@ -107,7 +107,24 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
 
 fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => Action::BackToList,
+        KeyCode::Esc => {
+            // First Esc: clear highlights if any are active
+            if let Some(conv) = &mut app.conversation {
+                let has_highlights = !conv.initial_search_terms.is_empty()
+                    || conv.search_confirmed;
+                if has_highlights {
+                    conv.initial_search_terms.clear();
+                    conv.search_confirmed = false;
+                    conv.search_query.clear();
+                    conv.match_positions.clear();
+                    conv.rendered_width = 0; // force re-render without highlights
+                    return Action::Continue;
+                }
+            }
+            // Second Esc (no highlights): go back to list
+            Action::BackToList
+        }
+        KeyCode::Char('q') => Action::BackToList,
         KeyCode::Char(' ') => {
             if let Some(conv) = &mut app.conversation {
                 let max = conv.lines.len().saturating_sub(conv.page_height);
@@ -171,8 +188,19 @@ fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('/') => {
             if let Some(conv) = &mut app.conversation {
                 conv.search_active = true;
-                conv.search_query.clear();
+                // Pre-fill with previous search term (from confirmed search or initial terms)
+                if conv.search_confirmed && !conv.search_query.is_empty() {
+                    // Keep existing search_query, mark as replacing
+                    conv.search_replacing = true;
+                } else if !conv.initial_search_terms.is_empty() {
+                    conv.search_query = conv.initial_search_terms.join(" ");
+                    conv.search_replacing = true;
+                } else {
+                    conv.search_query.clear();
+                    conv.search_replacing = false;
+                }
                 conv.search_confirmed = false;
+                conv.rendered_width = 0; // force re-render with live search
             }
             app.mode = Mode::ConversationSearch;
             Action::Continue
@@ -196,6 +224,7 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
                 conv.search_active = false;
                 conv.search_query.clear();
                 conv.search_confirmed = false;
+                conv.search_replacing = false;
                 conv.rendered_width = 0;
             }
             app.mode = Mode::Conversation;
@@ -204,6 +233,7 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Enter => {
             if let Some(conv) = &mut app.conversation {
                 conv.search_active = false;
+                conv.search_replacing = false;
                 if !conv.search_query.is_empty() && !conv.match_positions.is_empty() {
                     conv.search_confirmed = true;
                     conv.current_match = 0;
@@ -218,13 +248,31 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Backspace => {
             if let Some(conv) = &mut app.conversation {
-                conv.search_query.pop();
+                if conv.search_replacing {
+                    // Backspace on pre-filled: clear entirely
+                    conv.search_query.clear();
+                    conv.search_replacing = false;
+                } else {
+                    conv.search_query.pop();
+                }
                 conv.rendered_width = 0;
+            }
+            Action::Continue
+        }
+        KeyCode::Left | KeyCode::Right => {
+            // Arrow keys: deselect pre-filled text (keep it, allow editing)
+            if let Some(conv) = &mut app.conversation {
+                conv.search_replacing = false;
             }
             Action::Continue
         }
         KeyCode::Char(c) => {
             if let Some(conv) = &mut app.conversation {
+                if conv.search_replacing {
+                    // First char replaces pre-filled text
+                    conv.search_query.clear();
+                    conv.search_replacing = false;
+                }
                 conv.search_query.push(c);
                 conv.rendered_width = 0;
             }

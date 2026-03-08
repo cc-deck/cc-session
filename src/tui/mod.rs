@@ -87,6 +87,8 @@ pub struct ConversationState {
     pub search_query: String,
     pub search_active: bool,
     pub search_confirmed: bool,
+    /// First keystroke in search replaces the pre-filled text
+    pub search_replacing: bool,
     pub match_positions: Vec<usize>,
     pub current_match: usize,
     pub initial_search_terms: Vec<String>,
@@ -280,6 +282,7 @@ impl App {
             search_query: String::new(),
             search_active: false,
             search_confirmed: false,
+            search_replacing: false,
             match_positions: Vec::new(),
             current_match: 0,
             initial_search_terms,
