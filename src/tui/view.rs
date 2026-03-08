@@ -173,19 +173,34 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 
         let mut visible_lines: Vec<Line> = conv.lines[start..end].to_vec();
 
-        // Mark current match with a visible left indicator
-        if conv.search_confirmed && !conv.match_positions.is_empty() {
+        // Highlight current match with lighter bg, visible on search-highlighted spans
+        let has_matches = (conv.search_confirmed || !conv.initial_search_terms.is_empty())
+            && !conv.match_positions.is_empty();
+        if has_matches {
             let current_match_line = conv.match_positions[conv.current_match];
 
             for (i, line) in visible_lines.iter_mut().enumerate() {
                 let abs_line = start + i;
                 if abs_line == current_match_line {
-                    // Current match: prepend a colored indicator bar
-                    let mut new_spans = vec![Span::styled(
-                        "\u{258C}",
-                        Style::default().fg(app.theme.status_label_bg),
-                    )];
-                    new_spans.extend(line.spans.clone());
+                    // Lighten the background of each span on the current match line
+                    let new_spans: Vec<Span> = line
+                        .spans
+                        .iter()
+                        .map(|span| {
+                            let mut style = span.style;
+                            // Use a brighter highlight for the current match
+                            if let Some(Color::Rgb(r, g, b)) = style.bg {
+                                style.bg = Some(Color::Rgb(
+                                    r.saturating_add(30),
+                                    g.saturating_add(25),
+                                    b.saturating_add(10),
+                                ));
+                            } else {
+                                style.bg = Some(Color::Rgb(40, 40, 30));
+                            }
+                            Span::styled(span.content.clone(), style)
+                        })
+                        .collect();
                     *line = Line::from(new_spans);
                 }
             }
@@ -229,25 +244,34 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
             ];
 
             if conv.search_replacing {
-                // Show entire query as selected
+                // Show entire query as selected (inverted)
                 spans.push(Span::styled(
                     &conv.search_query,
-                    Style::default().fg(Color::White).bg(app.theme.status_label_bg),
+                    Style::default().fg(Color::Black).bg(app.theme.status_label_bg),
                 ));
             } else {
-                // Show query with cursor indicator
-                let (before, after) = conv.search_query.split_at(
-                    conv.search_cursor.min(conv.search_query.len()),
-                );
+                // Show query with block cursor at position
+                let cursor_pos = conv.search_cursor.min(conv.search_query.len());
+                let (before, rest) = conv.search_query.split_at(cursor_pos);
                 if !before.is_empty() {
                     spans.push(Span::styled(before, Style::default().fg(Color::White)));
                 }
-                spans.push(Span::styled(
-                    "\u{258E}",
-                    Style::default().fg(app.theme.status_label_bg),
-                ));
-                if !after.is_empty() {
-                    spans.push(Span::styled(after, Style::default().fg(Color::White)));
+                // Block cursor: invert the character at cursor position
+                if let Some(ch) = rest.chars().next() {
+                    spans.push(Span::styled(
+                        ch.to_string(),
+                        Style::default().fg(Color::Black).bg(Color::White),
+                    ));
+                    let after = &rest[ch.len_utf8()..];
+                    if !after.is_empty() {
+                        spans.push(Span::styled(after, Style::default().fg(Color::White)));
+                    }
+                } else {
+                    // Cursor at end: show block space
+                    spans.push(Span::styled(
+                        " ",
+                        Style::default().fg(Color::Black).bg(Color::White),
+                    ));
                 }
             }
 
@@ -273,9 +297,18 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim),
             ])
         } else if !conv.initial_search_terms.is_empty() {
-            // Entered from filter - show the filter terms prominently
+            // Entered from filter - show filter terms with match count
             let project_label = format_project_label(&conv.session);
             let filter_text = conv.initial_search_terms.join(" ");
+            let match_info = if conv.match_positions.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " {}/{}",
+                    conv.current_match + 1,
+                    conv.match_positions.len()
+                )
+            };
             Line::from(vec![
                 Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
                 Span::styled(" / ", label_style),
@@ -283,8 +316,9 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                     format!(" {} ", filter_text),
                     Style::default().fg(app.theme.status_label_bg),
                 ),
+                Span::styled(match_info, dim),
                 Span::raw("  "),
-                Span::styled("/ search  Esc clear  Enter copy & exit", dim),
+                Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim),
             ])
         } else {
             let project_label = format_project_label(&conv.session);
