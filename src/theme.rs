@@ -59,7 +59,7 @@ impl Theme {
             status_label_fg: Color::Black,
             selected_bg: Color::Rgb(30, 30, 50),
             cursor_color: Color::Cyan,
-            syntect_theme: "base16-ocean.dark",
+            syntect_theme: "Solarized (dark)",
         }
     }
 

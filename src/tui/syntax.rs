@@ -88,7 +88,9 @@ impl SyntaxHighlighter {
             let mut spans: Vec<Span<'static>> = Vec::new();
             let mut line_len = 0usize;
 
-            match highlighter.highlight_line(code_line, &self.syntax_set) {
+            // syntect with load_defaults_newlines requires trailing newlines
+            let line_with_nl = format!("{}\n", code_line);
+            match highlighter.highlight_line(&line_with_nl, &self.syntax_set) {
                 Ok(regions) => {
                     for (style, text) in regions {
                         let fg = RatColor::Rgb(
