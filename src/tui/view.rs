@@ -369,15 +369,6 @@ fn pre_render_conversation(
                     });
 
                     if let Some(hl_lines) = highlighted {
-                        // Language label above code block
-                        if let Some(ref lang) = code_lang {
-                            let label = format!(" {} ", lang);
-                            let pad = " ".repeat(width.saturating_sub(label.len()));
-                            lines.push(Line::from(vec![
-                                Span::styled(label, Style::default().fg(theme.text_dim).bg(theme.code_block_bg).italic()),
-                                Span::styled(pad, Style::default().bg(theme.code_block_bg)),
-                            ]));
-                        }
                         lines.extend(hl_lines);
                     } else {
                         // Fallback: single-color code, padded to full width
