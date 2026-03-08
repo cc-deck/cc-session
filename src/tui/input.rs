@@ -91,7 +91,10 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
             Action::Continue
         }
         KeyCode::Char(c) => {
-            // Any character types into the filter
+            // First '/' is swallowed as a "start filter" gesture (old muscle memory)
+            if c == '/' && app.filter_query.is_empty() {
+                return Action::Continue;
+            }
             app.filter_query.push(c);
             app.cancel_flag.store(true, Ordering::Relaxed);
             app.search_receiver = None;
