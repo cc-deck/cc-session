@@ -188,19 +188,20 @@ fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('/') => {
             if let Some(conv) = &mut app.conversation {
                 conv.search_active = true;
-                // Pre-fill with previous search term (from confirmed search or initial terms)
                 if conv.search_confirmed && !conv.search_query.is_empty() {
-                    // Keep existing search_query, mark as replacing
                     conv.search_replacing = true;
+                    conv.search_cursor = conv.search_query.len();
                 } else if !conv.initial_search_terms.is_empty() {
                     conv.search_query = conv.initial_search_terms.join(" ");
                     conv.search_replacing = true;
+                    conv.search_cursor = conv.search_query.len();
                 } else {
                     conv.search_query.clear();
                     conv.search_replacing = false;
+                    conv.search_cursor = 0;
                 }
                 conv.search_confirmed = false;
-                conv.rendered_width = 0; // force re-render with live search
+                conv.rendered_width = 0;
             }
             app.mode = Mode::ConversationSearch;
             Action::Continue
@@ -249,31 +250,48 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Backspace => {
             if let Some(conv) = &mut app.conversation {
                 if conv.search_replacing {
-                    // Backspace on pre-filled: clear entirely
                     conv.search_query.clear();
+                    conv.search_cursor = 0;
                     conv.search_replacing = false;
-                } else {
-                    conv.search_query.pop();
+                } else if conv.search_cursor > 0 {
+                    conv.search_query.remove(conv.search_cursor - 1);
+                    conv.search_cursor -= 1;
                 }
                 conv.rendered_width = 0;
             }
             Action::Continue
         }
-        KeyCode::Left | KeyCode::Right => {
-            // Arrow keys: deselect pre-filled text (keep it, allow editing)
+        KeyCode::Left => {
             if let Some(conv) = &mut app.conversation {
-                conv.search_replacing = false;
+                if conv.search_replacing {
+                    conv.search_replacing = false;
+                    conv.search_cursor = 0;
+                } else if conv.search_cursor > 0 {
+                    conv.search_cursor -= 1;
+                }
+            }
+            Action::Continue
+        }
+        KeyCode::Right => {
+            if let Some(conv) = &mut app.conversation {
+                if conv.search_replacing {
+                    conv.search_replacing = false;
+                    conv.search_cursor = conv.search_query.len();
+                } else if conv.search_cursor < conv.search_query.len() {
+                    conv.search_cursor += 1;
+                }
             }
             Action::Continue
         }
         KeyCode::Char(c) => {
             if let Some(conv) = &mut app.conversation {
                 if conv.search_replacing {
-                    // First char replaces pre-filled text
                     conv.search_query.clear();
+                    conv.search_cursor = 0;
                     conv.search_replacing = false;
                 }
-                conv.search_query.push(c);
+                conv.search_query.insert(conv.search_cursor, c);
+                conv.search_cursor += 1;
                 conv.rendered_width = 0;
             }
             Action::Continue

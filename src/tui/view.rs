@@ -204,6 +204,11 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
     let content = if let Some(conv) = &app.conversation {
         let dim = Style::default().fg(app.theme.text_dim);
+        let label_style = Style::default()
+            .fg(app.theme.status_label_fg)
+            .bg(app.theme.status_label_bg)
+            .bold();
+
         if conv.search_active {
             let match_info = if conv.search_query.is_empty() {
                 String::new()
@@ -217,49 +222,69 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 )
             };
 
-            // Show search query with "selected" appearance when replacing
-            let query_style = if conv.search_replacing {
-                Style::default().fg(Color::White).bg(app.theme.status_label_bg)
-            } else {
-                Style::default().fg(Color::White)
-            };
-
-            Line::from(vec![
-                Span::styled(
-                    " / ",
-                    Style::default()
-                        .fg(app.theme.status_label_fg)
-                        .bg(app.theme.status_label_bg)
-                        .bold(),
-                ),
+            // Render search query with cursor position
+            let mut spans = vec![
+                Span::styled(" / ", label_style),
                 Span::styled(" ", Style::default()),
-                Span::styled(&conv.search_query, query_style),
-                Span::styled("\u{258E}", Style::default().fg(app.theme.status_label_bg)),
-                Span::styled(match_info, dim),
-                Span::raw("  "),
-                Span::styled("Enter confirm  Esc cancel", dim),
-            ])
+            ];
+
+            if conv.search_replacing {
+                // Show entire query as selected
+                spans.push(Span::styled(
+                    &conv.search_query,
+                    Style::default().fg(Color::White).bg(app.theme.status_label_bg),
+                ));
+            } else {
+                // Show query with cursor indicator
+                let (before, after) = conv.search_query.split_at(
+                    conv.search_cursor.min(conv.search_query.len()),
+                );
+                if !before.is_empty() {
+                    spans.push(Span::styled(before, Style::default().fg(Color::White)));
+                }
+                spans.push(Span::styled(
+                    "\u{258E}",
+                    Style::default().fg(app.theme.status_label_bg),
+                ));
+                if !after.is_empty() {
+                    spans.push(Span::styled(after, Style::default().fg(Color::White)));
+                }
+            }
+
+            spans.push(Span::styled(match_info, dim));
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled("Enter confirm  Esc cancel", dim));
+
+            Line::from(spans)
         } else if conv.search_confirmed && !conv.match_positions.is_empty() {
             let project_label = format_project_label(&conv.session);
             Line::from(vec![
+                Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
+                Span::styled(" / ", label_style),
                 Span::styled(
-                    format!(" {} ", project_label),
-                    Style::default().fg(Color::Green).bold(),
+                    format!(" {} ", conv.search_query),
+                    Style::default().fg(app.theme.status_label_bg),
                 ),
                 Span::styled(
-                    format!(
-                        "\"{}\" {}/{}",
-                        conv.search_query,
-                        conv.current_match + 1,
-                        conv.match_positions.len()
-                    ),
+                    format!("{}/{}", conv.current_match + 1, conv.match_positions.len()),
                     dim,
                 ),
                 Span::raw("  "),
+                Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim),
+            ])
+        } else if !conv.initial_search_terms.is_empty() {
+            // Entered from filter - show the filter terms prominently
+            let project_label = format_project_label(&conv.session);
+            let filter_text = conv.initial_search_terms.join(" ");
+            Line::from(vec![
+                Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
+                Span::styled(" / ", label_style),
                 Span::styled(
-                    "n/N next/prev  / search  Enter copy & exit  Esc back",
-                    dim,
+                    format!(" {} ", filter_text),
+                    Style::default().fg(app.theme.status_label_bg),
                 ),
+                Span::raw("  "),
+                Span::styled("/ search  Esc clear  Enter copy & exit", dim),
             ])
         } else {
             let project_label = format_project_label(&conv.session);
@@ -637,14 +662,16 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     }
                 };
 
+                let label_style = Style::default()
+                    .fg(app.theme.status_label_fg)
+                    .bg(app.theme.status_label_bg)
+                    .bold();
+
                 Line::from(vec![
+                    Span::styled(" / ", label_style),
                     Span::styled(
-                        " filter: ",
-                        dim,
-                    ),
-                    Span::styled(
-                        &app.filter_query,
-                        Style::default().fg(app.theme.status_label_bg).bold(),
+                        format!(" {} ", app.filter_query),
+                        Style::default().fg(app.theme.text),
                     ),
                     Span::styled(match_info, dim),
                     Span::raw("  "),
