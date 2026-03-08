@@ -185,15 +185,30 @@ fn file_matches(path: &Path, re: &Regex) -> bool {
 }
 
 /// Extract the top-level "type" field from a JSONL line without full parsing.
-/// Looks for "type":"value" near the start of the line (within first 200 chars).
+/// Searches for the exact key `"type":"value"` (not `"userType"` etc.)
+/// within the first 500 chars to handle newer Claude Code JSON formats
+/// that include additional metadata fields before the type.
 fn extract_entry_type(line: &str) -> &str {
-    // The type field is always near the beginning of the JSON object
-    let prefix = &line[..line.len().min(200)];
-    if let Some(pos) = prefix.find("\"type\":\"") {
-        let start = pos + 8; // length of "type":"
-        if let Some(end) = prefix[start..].find('"') {
-            return &prefix[start..start + end];
+    let prefix = &line[..line.len().min(500)];
+    let needle = "\"type\":\"";
+    let mut search_from = 0;
+    while let Some(pos) = prefix[search_from..].find(needle) {
+        let abs_pos = search_from + pos;
+        // Ensure this is the "type" key, not e.g. "userType"
+        // The char before the quote must be { or , or whitespace (start of key)
+        let is_standalone = if abs_pos == 0 {
+            true
+        } else {
+            let prev = prefix.as_bytes()[abs_pos - 1];
+            prev == b'{' || prev == b',' || prev == b' ' || prev == b'\t'
+        };
+        if is_standalone {
+            let start = abs_pos + needle.len();
+            if let Some(end) = prefix[start..].find('"') {
+                return &prefix[start..start + end];
+            }
         }
+        search_from = abs_pos + 1;
     }
     ""
 }
