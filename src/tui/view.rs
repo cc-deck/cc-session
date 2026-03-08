@@ -50,7 +50,7 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         let right_len = right.len();
 
         let (cursor, cursor_len) = if is_selected {
-            ("\u{25B8} ", 2)
+            ("\u{27A4} ", 2)
         } else {
             ("  ", 2)
         };
