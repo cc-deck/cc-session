@@ -661,7 +661,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     format!(" {msg}"),
                     Style::default().fg(Color::Green).bold(),
                 )])
-            } else if !app.filter_query.is_empty() {
+            } else if app.filter_active || !app.filter_query.is_empty() {
                 // Filter active: show filter text with match count
                 let match_count = app.display_entries.len();
                 let match_info = if match_count == 0 {

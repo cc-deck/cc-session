@@ -22,10 +22,11 @@ pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
 fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => {
-            if !app.filter_query.is_empty() {
-                // First Escape: clear filter
+            if !app.filter_query.is_empty() || app.filter_active {
+                // First Escape: clear filter and deactivate
                 app.cancel_content_search();
                 app.filter_query.clear();
+                app.filter_active = false;
                 app.apply_filter();
                 Action::Continue
             } else {
@@ -91,10 +92,12 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
             Action::Continue
         }
         KeyCode::Char(c) => {
-            // First '/' is swallowed as a "start filter" gesture (old muscle memory)
-            if c == '/' && app.filter_query.is_empty() {
+            // First '/' activates filter mode visually without adding to query
+            if c == '/' && app.filter_query.is_empty() && !app.filter_active {
+                app.filter_active = true;
                 return Action::Continue;
             }
+            app.filter_active = true;
             app.filter_query.push(c);
             app.cancel_flag.store(true, Ordering::Relaxed);
             app.search_receiver = None;

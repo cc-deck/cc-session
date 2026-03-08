@@ -106,6 +106,8 @@ pub struct App {
     pub scroll_offset: usize,
     pub mode: Mode,
     pub filter_query: String,
+    /// Whether the filter UI indicator is shown (activated by / or typing)
+    pub filter_active: bool,
     pub status_message: Option<(String, Instant)>,
     pub conversation: Option<ConversationState>,
     /// Content-only search results from background search.
@@ -147,6 +149,7 @@ impl App {
             scroll_offset: 0,
             mode: Mode::Browsing,
             filter_query: String::new(),
+            filter_active: false,
             status_message: None,
             conversation: None,
             content_results: Vec::new(),
