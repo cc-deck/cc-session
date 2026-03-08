@@ -79,35 +79,41 @@ impl SyntaxHighlighter {
         let theme = self.theme_set.themes.get(theme_name)?;
         let mut highlighter = HighlightLines::new(syntax, theme);
 
+        let fallback_style = Style::default()
+            .fg(RatColor::Rgb(130, 170, 200))
+            .bg(bg_color);
+
         let mut lines = Vec::new();
         for code_line in code_lines {
-            let regions = highlighter
-                .highlight_line(code_line, &self.syntax_set)
-                .ok()?;
-
             let mut spans: Vec<Span<'static>> = Vec::new();
             let mut line_len = 0usize;
-            for (style, text) in regions {
-                let fg = RatColor::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                line_len += text.chars().count();
-                spans.push(Span::styled(
-                    text.to_string(),
-                    Style::default().fg(fg).bg(bg_color),
-                ));
+
+            match highlighter.highlight_line(code_line, &self.syntax_set) {
+                Ok(regions) => {
+                    for (style, text) in regions {
+                        let fg = RatColor::Rgb(
+                            style.foreground.r,
+                            style.foreground.g,
+                            style.foreground.b,
+                        );
+                        line_len += text.chars().count();
+                        spans.push(Span::styled(
+                            text.to_string(),
+                            Style::default().fg(fg).bg(bg_color),
+                        ));
+                    }
+                }
+                Err(_) => {
+                    // Per-line fallback: use single color for this line
+                    line_len = code_line.chars().count();
+                    spans.push(Span::styled(code_line.to_string(), fallback_style));
+                }
             }
 
             // Pad to full width so background spans the entire block
             if line_len < line_width {
                 spans.push(Span::styled(
                     " ".repeat(line_width - line_len),
-                    Style::default().bg(bg_color),
-                ));
-            }
-
-            if spans.is_empty() {
-                let pad = " ".repeat(line_width.saturating_sub(code_line.chars().count()));
-                spans.push(Span::styled(
-                    format!("{}{}", code_line, pad),
                     Style::default().bg(bg_color),
                 ));
             }
