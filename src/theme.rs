@@ -19,6 +19,7 @@ pub struct Theme {
     pub text: Color,
     pub text_dim: Color,
     pub heading: Color,
+    pub heading_bg: Color,
     pub separator: Color,
     // Tables
     pub table_border: Color,
@@ -50,6 +51,7 @@ impl Theme {
             text: Color::Reset,
             text_dim: Color::DarkGray,
             heading: Color::Green,
+            heading_bg: Color::Rgb(20, 35, 25),
             separator: Color::DarkGray,
             table_border: Color::DarkGray,
             table_header: Style::default().fg(Color::White).add_modifier(ratatui::style::Modifier::BOLD),
@@ -76,6 +78,7 @@ impl Theme {
             text: Color::Black,
             text_dim: Color::DarkGray,
             heading: Color::Rgb(0, 120, 0),
+            heading_bg: Color::Rgb(230, 245, 232),
             separator: Color::Rgb(180, 180, 180),
             table_border: Color::Rgb(150, 150, 150),
             table_header: Style::default().fg(Color::Black).add_modifier(ratatui::style::Modifier::BOLD),

@@ -440,23 +440,30 @@ fn pre_render_conversation(
                 let prefix = "\u{2500}".repeat(level.min(3));
                 let wrapped =
                     wrap_line(heading_text, width.saturating_sub(prefix.len() + 1));
+                let heading_with_bg = heading_style.bg(theme.heading_bg);
                 for (idx, wl) in wrapped.into_iter().enumerate() {
                     let mut spans = Vec::new();
                     if idx == 0 {
-                        spans.push(Span::styled(format!("{} ", prefix), dim));
+                        spans.push(Span::styled(
+                            format!("{} ", prefix),
+                            Style::default().fg(theme.text_dim).bg(theme.heading_bg),
+                        ));
                     }
                     spans.extend(render_markdown_inline(
                         &wl,
-                        heading_style,
+                        heading_with_bg,
                         search_terms,
                         theme,
                     ));
-                    let line = Line::from(spans);
-                    if let Some(bg) = msg_bg {
-                        lines.push(line.patch_style(Style::default().bg(bg)));
-                    } else {
-                        lines.push(line);
+                    // Pad to full width for consistent background
+                    let char_count: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+                    if char_count < width {
+                        spans.push(Span::styled(
+                            " ".repeat(width - char_count),
+                            Style::default().bg(theme.heading_bg),
+                        ));
                     }
+                    lines.push(Line::from(spans));
                 }
                 i += 1;
                 continue;
