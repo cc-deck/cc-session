@@ -61,6 +61,7 @@ pub enum DisplaySource {
 
 /// A single entry in the merged search results display.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DisplayEntry {
     pub match_type: MatchType,
     pub source: DisplaySource,

@@ -6,7 +6,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use crate::session::{ConversationMessage, MessageRole};
 
 use super::table;
-use super::{App, ContentSearchState, MatchType, Mode};
+use super::{App, ContentSearchState, Mode};
 
 /// Render the full TUI frame.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -28,9 +28,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
 /// Render the session list with single-line entries.
 fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
-    let width = area.width as usize;
+    let width = area.width.saturating_sub(2) as usize; // account for left/right borders
     let height = area.height as usize;
-    let visible_items = height;
+    let visible_items = height.saturating_sub(2); // account for top/bottom borders
     let mut lines: Vec<Line> = Vec::new();
 
     let terms = search_terms(app);
@@ -50,13 +50,7 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
         let right_len = right.len();
 
         let (cursor, cursor_len) = if is_selected {
-            if entry.match_type == MatchType::Content {
-                ("\u{25B8}\u{00B7}", 3)
-            } else {
-                ("\u{25B8} ", 2)
-            }
-        } else if entry.match_type == MatchType::Content {
-            (" \u{00B7}", 2)
+            ("\u{25B8} ", 2)
         } else {
             ("  ", 2)
         };
@@ -75,11 +69,7 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
 
         let dim = Style::default().fg(app.theme.text_dim);
 
-        let cursor_style = if entry.match_type == MatchType::Content {
-            Style::default().fg(app.theme.text_dim)
-        } else {
-            Style::default().fg(app.theme.cursor_color)
-        };
+        let cursor_style = Style::default().fg(app.theme.cursor_color);
 
         let mut spans = vec![Span::styled(cursor, cursor_style)];
         spans.extend(highlight_terms(&msg, &term_refs, msg_style, &app.theme));
@@ -96,8 +86,10 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let text = Text::from(lines);
+    let border_style = Style::default().fg(app.theme.text_dim);
     let block = Block::default()
-        .borders(Borders::NONE)
+        .borders(Borders::ALL)
+        .border_style(border_style)
         .title(format!(
             " cc-session ({}/{}) ",
             app.display_entries.len(),
