@@ -164,12 +164,14 @@ fn file_matches(path: &Path, re: &Regex) -> bool {
             Ok(l) => l,
             Err(_) => continue,
         };
-        // Only check user/assistant entries (skip summary, result, etc.)
-        if !line.contains("\"type\":\"user\"") && !line.contains("\"type\":\"assistant\"") {
-            continue;
-        }
         // Quick check: does the raw line match at all?
         if !re.is_match(&line) {
+            continue;
+        }
+        // Parse the entry type properly (simple string check can false-match
+        // against nested JSON content like type=progress containing "type":"user")
+        let entry_type = extract_entry_type(&line);
+        if entry_type != "user" && entry_type != "assistant" {
             continue;
         }
         // Strip system blocks then tags (same pipeline as conversation viewer)
@@ -180,6 +182,20 @@ fn file_matches(path: &Path, re: &Regex) -> bool {
         }
     }
     false
+}
+
+/// Extract the top-level "type" field from a JSONL line without full parsing.
+/// Looks for "type":"value" near the start of the line (within first 200 chars).
+fn extract_entry_type(line: &str) -> &str {
+    // The type field is always near the beginning of the JSON object
+    let prefix = &line[..line.len().min(200)];
+    if let Some(pos) = prefix.find("\"type\":\"") {
+        let start = pos + 8; // length of "type":"
+        if let Some(end) = prefix[start..].find('"') {
+            return &prefix[start..start + end];
+        }
+    }
+    ""
 }
 
 /// Search a single JSONL file for the pattern and extract session metadata.
