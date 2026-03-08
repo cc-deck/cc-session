@@ -282,44 +282,34 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(spans)
         } else if conv.search_confirmed && !conv.match_positions.is_empty() {
             let project_label = format_project_label(&conv.session);
+            let cyan = Style::default().fg(app.theme.status_label_bg);
             Line::from(vec![
                 Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
-                Span::styled(" / ", label_style),
-                Span::styled(
-                    format!(" {} ", conv.search_query),
-                    Style::default().fg(app.theme.status_label_bg),
-                ),
+                Span::styled(format!(" \"{}\" ", conv.search_query), cyan),
                 Span::styled(
                     format!("{}/{}", conv.current_match + 1, conv.match_positions.len()),
-                    dim,
+                    cyan,
                 ),
                 Span::raw("  "),
                 Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim),
             ])
         } else if !conv.initial_search_terms.is_empty() {
-            // Entered from filter - show filter terms with match count
             let project_label = format_project_label(&conv.session);
             let filter_text = conv.initial_search_terms.join(" ");
-            let match_info = if conv.match_positions.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    " {}/{}",
-                    conv.current_match + 1,
-                    conv.match_positions.len()
-                )
-            };
-            Line::from(vec![
+            let cyan = Style::default().fg(app.theme.status_label_bg);
+            let mut spans = vec![
                 Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
-                Span::styled(" / ", label_style),
-                Span::styled(
-                    format!(" {} ", filter_text),
-                    Style::default().fg(app.theme.status_label_bg),
-                ),
-                Span::styled(match_info, dim),
-                Span::raw("  "),
-                Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim),
-            ])
+                Span::styled(format!(" \"{}\" ", filter_text), cyan),
+            ];
+            if !conv.match_positions.is_empty() {
+                spans.push(Span::styled(
+                    format!("{}/{}", conv.current_match + 1, conv.match_positions.len()),
+                    cyan,
+                ));
+            }
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim));
+            Line::from(spans)
         } else {
             let project_label = format_project_label(&conv.session);
             Line::from(vec![
