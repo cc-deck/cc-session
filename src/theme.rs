@@ -41,10 +41,10 @@ impl Theme {
     pub fn dark() -> Self {
         Self {
             name: "dark",
-            user_header_bg: Color::Rgb(0, 90, 100),
-            user_header_fg: Color::White,
-            assistant_header_bg: Color::Rgb(100, 80, 0),
-            assistant_header_fg: Color::White,
+            user_header_bg: Color::Rgb(25, 45, 55),
+            user_header_fg: Color::Rgb(100, 200, 220),
+            assistant_header_bg: Color::Rgb(45, 40, 25),
+            assistant_header_fg: Color::Rgb(220, 190, 100),
             user_message_bg: Color::Rgb(25, 30, 40),
             code_block_bg: Color::Rgb(20, 25, 35),
             text: Color::Reset,
@@ -67,10 +67,10 @@ impl Theme {
     pub fn light() -> Self {
         Self {
             name: "light",
-            user_header_bg: Color::Rgb(200, 230, 240),
-            user_header_fg: Color::Black,
-            assistant_header_bg: Color::Rgb(240, 220, 180),
-            assistant_header_fg: Color::Black,
+            user_header_bg: Color::Rgb(215, 235, 245),
+            user_header_fg: Color::Rgb(0, 100, 130),
+            assistant_header_bg: Color::Rgb(245, 235, 215),
+            assistant_header_fg: Color::Rgb(130, 100, 0),
             user_message_bg: Color::Rgb(235, 240, 248),
             code_block_bg: Color::Rgb(245, 247, 250),
             text: Color::Black,
