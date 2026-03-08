@@ -5,6 +5,7 @@ mod scriptable;
 mod search;
 mod session;
 mod shell_setup;
+mod theme;
 mod tui;
 
 use clap::Parser;
@@ -46,6 +47,14 @@ struct Cli {
     /// When used with --shell-setup, append functions to your shell rc file
     #[arg(long = "install", requires = "shell_setup")]
     install: bool,
+
+    /// Force light color theme
+    #[arg(long = "light", conflicts_with = "dark")]
+    light: bool,
+
+    /// Force dark color theme
+    #[arg(long = "dark", conflicts_with = "light")]
+    dark: bool,
 }
 
 /// Parse a human-friendly duration string into a chrono::Duration.
@@ -123,8 +132,17 @@ fn main() {
         std::process::exit(code);
     }
 
+    // Determine color theme
+    let theme = if cli.light {
+        theme::Theme::light()
+    } else if cli.dark {
+        theme::Theme::dark()
+    } else {
+        theme::Theme::detect()
+    };
+
     // Default: interactive TUI
-    if let Err(e) = tui::run(sessions) {
+    if let Err(e) = tui::run(sessions, theme) {
         eprintln!("TUI error: {e}");
         std::process::exit(1);
     }
