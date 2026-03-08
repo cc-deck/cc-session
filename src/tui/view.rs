@@ -173,21 +173,20 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 
         let mut visible_lines: Vec<Line> = conv.lines[start..end].to_vec();
 
-        // Highlight current match line distinctly, dim other match lines
+        // Mark current match with a visible left indicator
         if conv.search_confirmed && !conv.match_positions.is_empty() {
             let current_match_line = conv.match_positions[conv.current_match];
-            let current_match_bg = app.theme.search_highlight_bg;
-            // Dimmer background for non-current matches
-            let other_match_bg = Color::Rgb(50, 45, 20);
 
             for (i, line) in visible_lines.iter_mut().enumerate() {
                 let abs_line = start + i;
                 if abs_line == current_match_line {
-                    // Current match: stronger full-width background
-                    *line = line.clone().patch_style(Style::default().bg(current_match_bg));
-                } else if conv.match_positions.contains(&abs_line) {
-                    // Other matches: subtle background
-                    *line = line.clone().patch_style(Style::default().bg(other_match_bg));
+                    // Current match: prepend a colored indicator bar
+                    let mut new_spans = vec![Span::styled(
+                        "\u{258C}",
+                        Style::default().fg(app.theme.status_label_bg),
+                    )];
+                    new_spans.extend(line.spans.clone());
+                    *line = Line::from(new_spans);
                 }
             }
         }

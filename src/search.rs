@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use regex::Regex;
 
-use crate::session::{clean_message, Session, SessionFileEntry, strip_tags};
+use crate::session::{clean_message, Session, SessionFileEntry, strip_system_blocks, strip_tags};
 
 /// Build a file-path-to-session index from discovered sessions.
 ///
@@ -172,8 +172,9 @@ fn file_matches(path: &Path, re: &Regex) -> bool {
         if !re.is_match(&line) {
             continue;
         }
-        // Strip XML tags (same as conversation viewer) and re-verify
-        let cleaned = strip_tags(&line);
+        // Strip system blocks then tags (same pipeline as conversation viewer)
+        let system_stripped = strip_system_blocks(&line);
+        let cleaned = strip_tags(&system_stripped);
         if re.is_match(&cleaned) {
             return true;
         }
