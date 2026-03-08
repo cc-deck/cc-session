@@ -275,7 +275,8 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 }
             }
 
-            spans.push(Span::styled(match_info, dim));
+            let cyan = Style::default().fg(app.theme.status_label_bg);
+            spans.push(Span::styled(match_info, cyan));
             spans.push(Span::raw("  "));
             spans.push(Span::styled("Enter confirm  Esc cancel", dim));
 
