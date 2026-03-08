@@ -139,10 +139,7 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 
         if conv.rendered_width != content_width || conv.lines.is_empty() {
             let search_terms: Vec<String> = if !conv.search_query.is_empty() {
-                conv.search_query
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect()
+                vec![conv.search_query.clone()]
             } else {
                 conv.initial_search_terms.clone()
             };
@@ -174,7 +171,27 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
         let start = conv.scroll_offset.min(total_lines.saturating_sub(1));
         let end = (start + height).min(total_lines);
 
-        let visible_lines: Vec<Line> = conv.lines[start..end].to_vec();
+        let mut visible_lines: Vec<Line> = conv.lines[start..end].to_vec();
+
+        // Highlight current match line distinctly, dim other match lines
+        if conv.search_confirmed && !conv.match_positions.is_empty() {
+            let current_match_line = conv.match_positions[conv.current_match];
+            let current_match_bg = app.theme.search_highlight_bg;
+            // Dimmer background for non-current matches
+            let other_match_bg = Color::Rgb(50, 45, 20);
+
+            for (i, line) in visible_lines.iter_mut().enumerate() {
+                let abs_line = start + i;
+                if abs_line == current_match_line {
+                    // Current match: stronger full-width background
+                    *line = line.clone().patch_style(Style::default().bg(current_match_bg));
+                } else if conv.match_positions.contains(&abs_line) {
+                    // Other matches: subtle background
+                    *line = line.clone().patch_style(Style::default().bg(other_match_bg));
+                }
+            }
+        }
+
         let text = Text::from(visible_lines);
 
         let paragraph = Paragraph::new(text);
@@ -877,13 +894,11 @@ fn highlight_terms<'a>(
 }
 
 /// Get the active search terms for highlighting from the app state.
+/// Returns the full query as a single term (spaces are literal).
 fn search_terms(app: &App) -> Vec<String> {
-    if !app.filter_query.is_empty() {
-        return app
-            .filter_query
-            .split_whitespace()
-            .map(String::from)
-            .collect();
+    let trimmed = app.filter_query.trim();
+    if !trimmed.is_empty() {
+        return vec![trimmed.to_string()];
     }
     Vec::new()
 }

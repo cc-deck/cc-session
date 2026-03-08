@@ -2,17 +2,18 @@
 
 use crate::session::Session;
 
-/// Filter sessions by requiring all space-separated terms to appear as
-/// case-insensitive substrings in "{project_name} {git_branch} {first_message}".
+/// Filter sessions by requiring the query to appear as a case-insensitive
+/// substring in "{project_name} {git_branch} {first_message}".
 ///
-/// Returns matching indices (in original order, since all matches are equal rank).
+/// The full query (including spaces) is matched literally.
+/// Returns matching indices in original order.
 pub fn filter_sessions(sessions: &[Session], query: &str) -> Vec<usize> {
-    let query_lower = query.to_lowercase();
-    let terms: Vec<&str> = query_lower.split_whitespace().collect();
-
-    if terms.is_empty() {
+    let query_trimmed = query.trim();
+    if query_trimmed.is_empty() {
         return (0..sessions.len()).collect();
     }
+
+    let query_lower = query_trimmed.to_lowercase();
 
     sessions
         .iter()
@@ -25,7 +26,7 @@ pub fn filter_sessions(sessions: &[Session], query: &str) -> Vec<usize> {
             )
             .to_lowercase();
 
-            if terms.iter().all(|term| haystack.contains(term)) {
+            if haystack.contains(&query_lower) {
                 Some(idx)
             } else {
                 None
