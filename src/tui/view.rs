@@ -217,17 +217,11 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled("Enter confirm  Esc cancel", dim),
             ])
         } else if conv.search_confirmed && !conv.match_positions.is_empty() {
+            let project_label = format_project_label(&conv.session);
             Line::from(vec![
                 Span::styled(
-                    " SESSION ",
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Green)
-                        .bold(),
-                ),
-                Span::styled(
-                    format!(" {} ", conv.session.project_name),
-                    Style::default().fg(Color::Green),
+                    format!(" {} ", project_label),
+                    Style::default().fg(Color::Green).bold(),
                 ),
                 Span::styled(
                     format!(
@@ -245,17 +239,11 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ])
         } else {
+            let project_label = format_project_label(&conv.session);
             Line::from(vec![
                 Span::styled(
-                    " SESSION ",
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Green)
-                        .bold(),
-                ),
-                Span::styled(
-                    format!(" {} ", conv.session.project_name),
-                    Style::default().fg(Color::Green),
+                    format!(" {} ", project_label),
+                    Style::default().fg(Color::Green).bold(),
                 ),
                 Span::raw(" "),
                 Span::styled(
@@ -601,47 +589,6 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let dim = Style::default().fg(app.theme.text_dim);
     let content = match app.mode {
-        Mode::Filtering => {
-            let match_count = app.display_entries.len();
-            let match_info = if app.filter_query.is_empty() {
-                String::new()
-            } else if match_count == 0 {
-                " no matches".to_string()
-            } else {
-                match app.content_search_state {
-                    ContentSearchState::Searching => {
-                        format!(
-                            " {} {} matches (searching content...)",
-                            app.spinner_char(),
-                            match_count
-                        )
-                    }
-                    _ => format!(" {} matches", match_count),
-                }
-            };
-
-            Line::from(vec![
-                Span::styled(
-                    " SEARCH ",
-                    Style::default()
-                        .fg(app.theme.status_label_fg)
-                        .bg(app.theme.status_label_bg)
-                        .bold(),
-                ),
-                Span::styled(" ", Style::default()),
-                Span::styled(
-                    &app.filter_query,
-                    Style::default().fg(app.theme.text),
-                ),
-                Span::styled(
-                    "\u{258E}",
-                    Style::default().fg(app.theme.status_label_bg),
-                ),
-                Span::styled(match_info, dim),
-                Span::raw("  "),
-                Span::styled("Esc cancel  Enter select", dim),
-            ])
-        }
         Mode::Conversation | Mode::ConversationSearch => Line::from(""),
         Mode::Browsing => {
             if let Some((msg, _)) = &app.status_message {
@@ -649,16 +596,46 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     format!(" {msg}"),
                     Style::default().fg(Color::Green).bold(),
                 )])
+            } else if !app.filter_query.is_empty() {
+                // Filter active: show filter text with match count
+                let match_count = app.display_entries.len();
+                let match_info = if match_count == 0 {
+                    " no matches".to_string()
+                } else {
+                    match app.content_search_state {
+                        ContentSearchState::Searching => {
+                            format!(
+                                " {} {} matches (searching content...)",
+                                app.spinner_char(),
+                                match_count
+                            )
+                        }
+                        _ => format!(" {} matches", match_count),
+                    }
+                };
+
+                Line::from(vec![
+                    Span::styled(
+                        " filter: ",
+                        dim,
+                    ),
+                    Span::styled(
+                        &app.filter_query,
+                        Style::default().fg(app.theme.status_label_bg).bold(),
+                    ),
+                    Span::styled(match_info, dim),
+                    Span::raw("  "),
+                    Span::styled("Esc clear  Enter select", dim),
+                ])
             } else {
                 Line::from(vec![
-                    Span::styled(" / ", dim),
-                    Span::styled("search", dim),
-                    Span::raw("  "),
-                    Span::styled("Enter ", dim),
+                    Span::styled(" Enter ", dim),
                     Span::styled("detail", dim),
                     Span::raw("  "),
-                    Span::styled("q ", dim),
+                    Span::styled("Esc ", dim),
                     Span::styled("quit", dim),
+                    Span::raw("  "),
+                    Span::styled("(type to search)", dim),
                 ])
             }
         }
@@ -902,4 +879,12 @@ fn search_terms(app: &App) -> Vec<String> {
             .collect();
     }
     Vec::new()
+}
+
+/// Format project label as "project_name (branch)" for the conversation status bar.
+fn format_project_label(session: &crate::session::Session) -> String {
+    match &session.git_branch {
+        Some(branch) if !branch.is_empty() => format!("{} ({})", session.project_name, branch),
+        _ => session.project_name.clone(),
+    }
 }

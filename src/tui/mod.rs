@@ -31,7 +31,6 @@ use input::handle_input;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Browsing,
-    Filtering,
     Conversation,
     ConversationSearch,
 }
@@ -291,11 +290,7 @@ impl App {
     /// Leave conversation viewer and return to the list.
     pub fn leave_conversation(&mut self) {
         self.conversation = None;
-        if !self.filter_query.is_empty() {
-            self.mode = Mode::Filtering;
-        } else {
-            self.mode = Mode::Browsing;
-        }
+        self.mode = Mode::Browsing;
     }
 
     /// Set a status message that disappears after a few seconds.
@@ -424,7 +419,7 @@ pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::erro
             app.poll_content_search();
         }
 
-        if app.mode == Mode::Filtering {
+        if app.mode == Mode::Browsing {
             app.check_debounce();
         }
 

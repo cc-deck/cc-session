@@ -61,7 +61,7 @@ impl Theme {
             status_bar_bg: Color::Rgb(20, 20, 30),
             status_label_bg: Color::Cyan,
             status_label_fg: Color::Black,
-            selected_bg: Color::Rgb(30, 30, 50),
+            selected_bg: Color::Rgb(35, 45, 65),
             cursor_color: Color::Cyan,
             syntect_theme: "base16-eighties.dark",
         }
