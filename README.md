@@ -13,15 +13,11 @@ cc-session fixes this by scanning all your sessions, presenting them in a search
 ## Features
 
 - **Interactive TUI** with single-line session display (prompt text left, project + time right-aligned)
-- **Seamless search**: just start typing to filter across project name, git branch, and message text. No mode switch needed.
+- **Seamless search**: just start typing to filter across project name, git branch, and message text. No mode switch needed. After a short debounce, a background deep search automatically scans full conversation content too.
 - **Conversation viewer** with full session replay, syntax-highlighted code blocks, markdown tables, clickable URLs, and styled headings
 - **In-conversation search**: press `/` to search within a conversation, navigate matches with `n`/`N`
 - **Theme-aware rendering**: auto-detects dark/light terminal background, with `--dark`/`--light` overrides
-- **Deep search** (`-g`) scanning full conversation content across all sessions in parallel (case-insensitive)
-- **Scriptable mode** (`-s`) with slim selection menu for shell scripting
-- **Quick mode** (`-q`) for non-interactive scripting (prints top match to stdout)
 - **Time filters** (`--since 7d`, `--last 50`) to scope results
-- **Shell integration** (`--shell-setup --install`) adding `ccs` and `ccf` helper functions
 - **Cross-platform clipboard** (macOS, Linux X11/Wayland) with stdout fallback
 - **Markup stripping** removes Claude Code internal tags for clean display
 
@@ -53,45 +49,31 @@ Requires a [Rust toolchain](https://rustup.rs/).
 # Browse all sessions interactively
 cc-session
 
-# Find sessions matching "auth"
-cc-session -s auth
-
-# Deep search conversation content for a specific term
-cc-session -g "ConnectionRefused"
-
-# Quick mode: print top match for scripting
-cc-session -s myproject -q
-
 # Only show sessions from the last week
 cc-session --since 7d
-```
 
-### Shell integration
+# Limit to the 20 most recent sessions
+cc-session --last 20
 
-Install helper functions for one-command session resumption:
-
-```bash
-cc-session --shell-setup --install
-```
-
-This adds two functions to your shell:
-
-```bash
-ccs podman    # deep search + cd + resume
-ccf myproject # fuzzy search + cd + resume
+# Force light theme
+cc-session --light
 ```
 
 ## Usage
 
-### Interactive TUI (default)
-
 Run `cc-session` to open the interactive session browser. Sessions are displayed one per line with the prompt text on the left and the project name + relative time on the right (dimmed).
 
-Press Enter on a session to open the **conversation viewer**.
+### Seamless search
+
+Just start typing to filter sessions. No mode switch needed. The filter matches case-insensitive substrings across project names, git branches, and prompt text. The full query (including spaces) is matched as a literal substring. The list updates in real-time.
+
+Press Escape once to clear the filter, twice to quit. Press Enter to open the selected session.
+
+After a short debounce (300ms), a background deep search automatically scans full conversation content for your query. Sessions matching inside their conversation are merged into the results.
 
 ### Conversation viewer
 
-The conversation viewer shows the full session with all user and assistant messages. Messages are visually distinguished by role (cyan for You, yellow for Claude), separated by horizontal lines showing project name, branch, and timestamp. Content is capped at 120 characters wide and centered for comfortable reading.
+Press Enter on a session to open the conversation viewer. It shows the full session with all user and assistant messages, visually distinguished by role (cyan for You, yellow for Claude), separated by horizontal lines showing project name, branch, and timestamp. Content is capped at 120 characters wide and centered for comfortable reading.
 
 Features:
 - **Syntax highlighting**: Code blocks with language detection via syntect (Rust, Python, TypeScript, and many more)
@@ -102,54 +84,10 @@ Features:
 - **Word wrapping**: Text wraps at word boundaries, never mid-word
 - **Message merging**: Consecutive messages from the same role are combined into a single entry
 - **In-view search**: Press `/` to search within the conversation. Matches are highlighted, current match emphasized. Press `n`/`N` to jump between matches. Match counter shown as `"query" 1/6`.
-- **Auto-scroll**: When entering from a filter or deep search, the viewer auto-scrolls to center the first match on screen
+- **Auto-scroll**: When entering from a search, the viewer auto-scrolls to center the first match on screen
 - **Theme-aware**: Colors adapt to dark or light terminal backgrounds
 
 Navigation: `Space`/`PageDown` page down, `b`/`PageUp` page up, `g` top, `G` bottom, arrows for line-by-line scrolling. Press `Enter` to copy the resume command and exit, `Esc` to return to the session list.
-
-### Seamless search
-
-Just start typing to filter sessions. No mode switch needed. The filter matches case-insensitive substrings across project names, git branches, and prompt text. The full query (including spaces) is matched as a literal substring. The list updates in real-time.
-
-Press Escape once to clear the filter, twice to quit. Press Enter to open the selected session.
-
-After a short debounce (300ms), a background deep search automatically scans full conversation content for your query. Sessions matching inside their conversation are merged into the results.
-
-### Scriptable mode (`-s`)
-
-```bash
-# Single match: prints command directly
-cc-session -s unique-project
-
-# Multiple matches: shows numbered menu
-cc-session -s auth
-#   3 sessions match "auth":
-#   1  auth-service · main · 2 hours ago
-#      "Add JWT token validation..."
-#   2  api-gateway · feat-auth · yesterday
-#      "Implement OAuth2 flow..."
-#   Select [1-2]:
-```
-
-### Deep search (`-g`)
-
-Search through all conversation content (not just the first message):
-
-```bash
-cc-session -g "ConnectionRefused"
-cc-session -g "impl.*Iterator"    # regex supported
-```
-
-Deep search is case-insensitive by default. With 2,000+ sessions and 750 MB of data, searches complete in under 1 second thanks to parallel scanning with rayon and a pre-built session index.
-
-### Quick mode (`-q`)
-
-Non-interactive, prints the top match to stdout. Use with `eval` for one-command resumption:
-
-```bash
-eval $(cc-session -s myproject -q)
-eval $(cc-session -g podman -q)
-```
 
 ### Time filters
 
@@ -191,24 +129,23 @@ cc-session --since 7d --last 10  # both constraints
 
 ## How it works
 
-1. **Discovery**: Scans `~/.claude/projects/` for session JSONL files using parallel I/O (rayon). Each `.jsonl` file is a session, identified by UUID filename. Builds a file-path-to-session index for fast deep search lookups.
+1. **Discovery**: Scans `~/.claude/projects/` for session JSONL files using parallel I/O (rayon). Each `.jsonl` file is a session, identified by UUID filename.
 
 2. **Parsing**: Reads the first few lines of each session file to find the first real user message (skipping `file-history-snapshot` entries and internal markup). Extracts project path, git branch, timestamp, and cleaned prompt text.
 
-3. **Display**: Single-line format with the prompt text left-aligned and project + time right-aligned. Filtering uses case-insensitive substring matching (all space-separated terms must match).
+3. **Display**: Single-line format with the prompt text left-aligned and project + time right-aligned. Seamless search filters in real-time as you type.
 
-4. **Conversation viewer**: Loads all user and assistant messages from the session JSONL file. Merges consecutive same-role entries. Renders syntax-highlighted code blocks (syntect), markdown tables with box-drawing borders, styled headings, and clickable URLs. Pre-wraps text at word boundaries to 120 characters max. Centers content on wide terminals.
+4. **Deep search**: After a debounce, searches full conversation content in parallel using rayon. Matches are merged into the filtered results with a pre-built session index for O(1) lookups.
 
-5. **Resume command**: Generates `cd '<project-path>' && claude -r <session-id>` with properly quoted paths. Copied to clipboard via arboard (cross-platform).
+5. **Conversation viewer**: Loads all user and assistant messages from the session JSONL file. Merges consecutive same-role entries. Renders syntax-highlighted code blocks (syntect), markdown tables with box-drawing borders, styled headings, and clickable URLs. Pre-wraps text at word boundaries to 120 characters max. Centers content on wide terminals.
 
-6. **Deep search**: Uses regex + rayon to scan all JSONL content in parallel. Looks up matching files in the pre-built session index (O(1) HashMap lookup) instead of re-parsing each file, achieving sub-second performance even for common terms matching 500+ sessions.
+6. **Resume command**: Generates `cd '<project-path>' && claude -r <session-id>` with properly quoted paths. Copied to clipboard via arboard (cross-platform).
 
 ## Files
 
 | Path | Purpose |
 |------|---------|
 | `~/.claude/projects/` | Session data (read-only) |
-| `~/.zshrc` or `~/.bashrc` | Shell functions (if `--shell-setup --install` used) |
 
 ## License
 

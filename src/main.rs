@@ -1,10 +1,8 @@
 mod clipboard;
 mod discovery;
 mod filter;
-mod scriptable;
 mod search;
 mod session;
-mod shell_setup;
 mod theme;
 mod tui;
 
@@ -20,14 +18,6 @@ use discovery::{apply_filters, discover_sessions, get_claude_home};
     about
 )]
 struct Cli {
-    /// Scriptable select mode, with optional initial query
-    #[arg(short, long)]
-    select: Option<Option<String>>,
-
-    /// Search (grep) inside session content
-    #[arg(short, long)]
-    grep: Option<String>,
-
     /// Only show sessions newer than duration (e.g. 7d, 2w, 1m)
     #[arg(long)]
     since: Option<String>,
@@ -35,18 +25,6 @@ struct Cli {
     /// Show at most N sessions
     #[arg(long)]
     last: Option<usize>,
-
-    /// Quick mode: print the top match directly (no menu, no clipboard). Use with -s or -g.
-    #[arg(short = 'q', long = "quick")]
-    quick: bool,
-
-    /// Print shell function definitions, or install them with --install
-    #[arg(long = "shell-setup")]
-    shell_setup: bool,
-
-    /// When used with --shell-setup, append functions to your shell rc file
-    #[arg(long = "install", requires = "shell_setup")]
-    install: bool,
 
     /// Force light color theme
     #[arg(long = "light", conflicts_with = "dark")]
@@ -84,16 +62,6 @@ fn parse_duration(s: &str) -> Result<chrono::Duration, String> {
 fn main() {
     let cli = Cli::parse();
 
-    // Handle --shell-setup before anything else
-    if cli.shell_setup {
-        if cli.install {
-            shell_setup::install();
-        } else {
-            shell_setup::print_definitions();
-        }
-        return;
-    }
-
     let claude_home = get_claude_home();
     let projects_dir = claude_home.join("projects");
 
@@ -117,21 +85,6 @@ fn main() {
 
     let sessions = apply_filters(sessions, since_duration, cli.last);
 
-    // Dispatch to the appropriate mode
-    if let Some(query) = cli.select {
-        let q = query.unwrap_or_default();
-        let code = scriptable::run_scriptable(&sessions, &q, cli.quick);
-        std::process::exit(code);
-    }
-
-    if let Some(pattern) = cli.grep {
-        let index = search::build_session_index(&claude_home, &sessions);
-        let no_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let results = search::deep_search_indexed(&claude_home, &pattern, &index, &no_cancel);
-        let code = scriptable::run_scriptable_prefiltered(&results, &pattern, cli.quick);
-        std::process::exit(code);
-    }
-
     // Determine color theme
     let theme = if cli.light {
         theme::Theme::light()
@@ -141,7 +94,7 @@ fn main() {
         theme::Theme::detect()
     };
 
-    // Default: interactive TUI
+    // Interactive TUI
     if let Err(e) = tui::run(sessions, theme) {
         eprintln!("TUI error: {e}");
         std::process::exit(1);
