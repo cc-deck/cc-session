@@ -764,18 +764,77 @@ fn render_markdown_inline<'a>(
         spans.push((current, base_style));
     }
 
+    // Post-process: detect URLs and style them
+    let link_style = base_style
+        .fg(theme.link)
+        .add_modifier(Modifier::UNDERLINED);
+    let processed: Vec<(String, Style)> = spans
+        .into_iter()
+        .flat_map(|(text, style)| split_urls(&text, style, link_style))
+        .collect();
+
     if search_terms.is_empty() {
-        return spans
+        return processed
             .into_iter()
             .map(|(text, style)| Span::styled(text, style))
             .collect();
     }
 
     let mut result: Vec<Span<'a>> = Vec::new();
-    for (segment, style) in spans {
+    for (segment, style) in processed {
         result.extend(highlight_terms(&segment, search_terms, style, theme));
     }
     result
+}
+
+/// Split a text segment into URL and non-URL parts.
+fn split_urls(text: &str, base_style: Style, link_style: Style) -> Vec<(String, Style)> {
+    const URL_PREFIXES: &[&str] = &["https://", "http://"];
+
+    let mut parts = Vec::new();
+    let mut remaining = text;
+
+    while !remaining.is_empty() {
+        // Find the earliest URL
+        let mut earliest_pos = None;
+        let mut earliest_prefix_len = 0;
+        for prefix in URL_PREFIXES {
+            if let Some(pos) = remaining.find(prefix) {
+                if earliest_pos.is_none() || pos < earliest_pos.unwrap() {
+                    earliest_pos = Some(pos);
+                    earliest_prefix_len = prefix.len();
+                }
+            }
+        }
+
+        match earliest_pos {
+            Some(pos) => {
+                // Text before URL
+                if pos > 0 {
+                    parts.push((remaining[..pos].to_string(), base_style));
+                }
+                // Extract URL (until whitespace, closing paren/bracket, or end)
+                let url_start = &remaining[pos..];
+                let url_end = url_start[earliest_prefix_len..]
+                    .find(|c: char| c.is_whitespace() || c == ')' || c == ']' || c == '>' || c == '"' || c == '\'')
+                    .map(|p| p + earliest_prefix_len)
+                    .unwrap_or(url_start.len());
+                // Trim trailing punctuation that's likely not part of the URL
+                let mut url = &url_start[..url_end];
+                while url.ends_with('.') || url.ends_with(',') || url.ends_with(';') || url.ends_with(':') {
+                    url = &url[..url.len() - 1];
+                }
+                parts.push((url.to_string(), link_style));
+                remaining = &remaining[pos + url.len()..];
+            }
+            None => {
+                parts.push((remaining.to_string(), base_style));
+                break;
+            }
+        }
+    }
+
+    parts
 }
 
 /// Split text into spans, highlighting portions that match any search terms.
