@@ -231,7 +231,9 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 
         // Render vertical scrollbar on the right edge of the border
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::default().fg(app.theme.text_dim));
+            .thumb_style(Style::default().fg(app.theme.text_dim))
+            .begin_symbol(None)
+            .end_symbol(None);
         let mut scrollbar_state = ScrollbarState::new(total_lines.saturating_sub(height))
             .position(conv.scroll_offset);
         frame.render_stateful_widget(
