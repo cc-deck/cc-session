@@ -1,38 +1,55 @@
 # cc-session Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-02-25
-
-## Active Technologies
-- Rust (stable, 2021 edition, MSRV 1.80.0) + Shell scripts (bash) + cargo-dist 0.31.0, asciinema 3.1.0, agg 1.7.0, tmux (002-release-docs-demo)
-- Rust (stable, 2021 edition, MSRV 1.80.0) + ratatui 0.30, crossterm 0.29, serde/serde_json 1.0, chrono 0.4 (003-conversation-viewer)
-- Read-only access to `~/.claude/projects/**/*.jsonl` (003-conversation-viewer)
-- Rust stable, 2021 edition, MSRV 1.80.0 + ratatui 0.30, crossterm 0.29, clap 4.5, regex 1, rayon 1.11, serde/serde_json 1.0, chrono 0.4, dirs 6.0, arboard 3.6 (005-unified-search)
-- Read-only access to `~/.claude/projects/**/*.jsonl` (005-unified-search)
-- Rust stable, 2021 edition, MSRV 1.80.0 + ratatui 0.30, crossterm 0.29, clap 4.5, syntect 5.3 (new), syntect-tui 3.0 (new), termbg 0.6 (new) (006-viewer-enhancements)
-- Read-only access to `~/.claude/projects/**/*.jsonl` (006-viewer-enhancements)
-
-- Rust (stable, 2021 edition, MSRV 1.80.0) + ratatui 0.30, crossterm 0.29, clap 4.5, nucleo 0.5, arboard 3.6, rayon 1.11, serde/serde_json 1.0, chrono 0.4, dirs 6.0 (001-session-finder)
-
-## Project Structure
-
-```text
-src/
-tests/
-```
+## Tech Stack
+- Rust (stable, 2021 edition, MSRV 1.80.0)
+- ratatui 0.30, crossterm 0.29, clap 4.5, syntect 5.3, termbg 0.6
+- rayon 1.11, regex 1, serde/serde_json 1.0, chrono 0.4, arboard 3.6
+- Read-only access to `~/.claude/projects/**/*.jsonl`
 
 ## Commands
 
-cargo test [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] cargo clippy
+```bash
+cargo test        # Run all tests
+cargo clippy      # Lint check
+cargo build       # Dev build
+```
 
 ## Code Style
 
-Rust (stable, 2021 edition, MSRV 1.80.0): Follow standard conventions
+Follow standard Rust conventions. Run `cargo clippy` before committing.
 
-## Recent Changes
-- 006-viewer-enhancements: Added Rust stable, 2021 edition, MSRV 1.80.0 + ratatui 0.30, crossterm 0.29, clap 4.5, syntect 5.3 (new), syntect-tui 3.0 (new), termbg 0.6 (new)
-- 005-unified-search: Added Rust stable, 2021 edition, MSRV 1.80.0 + ratatui 0.30, crossterm 0.29, clap 4.5, regex 1, rayon 1.11, serde/serde_json 1.0, chrono 0.4, dirs 6.0, arboard 3.6
-- 003-conversation-viewer: Added Rust (stable, 2021 edition, MSRV 1.80.0) + ratatui 0.30, crossterm 0.29, serde/serde_json 1.0, chrono 0.4
+## Release Process
 
+Releases use cargo-dist via GitHub Actions, triggered by pushing annotated tags.
 
-<!-- MANUAL ADDITIONS START -->
-<!-- MANUAL ADDITIONS END -->
+### Steps
+
+1. Collect changes since last release: `git log <last-tag>..HEAD --oneline`
+2. Create release notes in `CHANGELOG.md` (prepend new section)
+3. Bump version in `Cargo.toml`
+4. Commit version bump and changelog together
+5. Create annotated tag: `git tag -a v<version> -m "<one-line summary>"`
+6. Push: `git push origin main v<version>`
+7. Wait for cargo-dist CI to create the GitHub release
+8. Edit the release to prepend the changelog section: `gh release edit v<version> --notes-file -`
+
+### Changelog Format
+
+```markdown
+## What's New
+
+- **Feature name**: Brief description of what changed and why
+- **Bug fix**: What was broken and how it was fixed
+
+## Bug Fixes
+
+- Description of fix
+```
+
+Keep entries concise. Group by: "What's New" for features/improvements, "Bug Fixes" for fixes. No need to list every commit, summarize related changes into single entries.
+
+### Important
+
+- Do NOT create GH releases manually (cargo-dist CI creates them)
+- Homebrew tap at rhuss/tap updates automatically
+- GPG signing can timeout; use `-c commit.gpgsign=false` or `-c tag.gpgsign=false` if needed
