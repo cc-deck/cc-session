@@ -134,27 +134,29 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
     let full_content_area = chunks[0];
     let status_area = chunks[1];
 
-    // Compute scroll percentage for title
-    let scroll_pct = if let Some(conv) = &app.conversation {
-        let total = conv.lines.len();
-        let height = full_content_area.height.saturating_sub(2) as usize; // account for borders
-        if total <= height {
-            100
+    // Build title: show match position during search, nothing otherwise
+    let title_extra = if let Some(conv) = &app.conversation {
+        let has_search = conv.search_confirmed || !conv.initial_search_terms.is_empty();
+        if has_search && !conv.match_positions.is_empty() {
+            format!(
+                " ({}/{}) ",
+                conv.current_match + 1,
+                conv.match_positions.len()
+            )
         } else {
-            let max_scroll = total.saturating_sub(height);
-            ((conv.scroll_offset as f64 / max_scroll as f64) * 100.0).round() as usize
+            String::from(" ")
         }
     } else {
-        0
+        String::from(" ")
     };
 
-    // Draw border around the full area with title and scroll position
+    // Draw border around the full area with title
     let border_style = Style::default().fg(app.theme.text_dim);
     let title_style = Style::default().fg(app.theme.cursor_color).bold();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(format!(" cc-session ({scroll_pct}%) "))
+        .title(format!(" cc-session{title_extra}"))
         .title_style(title_style);
     let inner_area = block.inner(full_content_area);
     frame.render_widget(block, full_content_area);
@@ -279,18 +281,6 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
             .bold();
 
         if conv.search_active {
-            let match_info = if conv.search_query.is_empty() {
-                String::new()
-            } else if conv.match_positions.is_empty() {
-                " No matches".to_string()
-            } else {
-                format!(
-                    " {}/{}",
-                    conv.current_match + 1,
-                    conv.match_positions.len()
-                )
-            };
-
             // Render search query with cursor position
             let mut spans = vec![
                 Span::styled(" / ", label_style),
@@ -329,8 +319,6 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 }
             }
 
-            let cyan = Style::default().fg(app.theme.status_label_bg);
-            spans.push(Span::styled(match_info, cyan));
             spans.push(Span::raw("  "));
             spans.push(Span::styled("Enter confirm  Esc cancel", dim));
 
@@ -340,31 +328,20 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
             let cyan = Style::default().fg(app.theme.status_label_bg);
             Line::from(vec![
                 Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
-                Span::styled(format!(" \"{}\" ", conv.search_query), cyan),
-                Span::styled(
-                    format!("{}/{}", conv.current_match + 1, conv.match_positions.len()),
-                    cyan,
-                ),
-                Span::raw("  "),
+                Span::styled(format!(" {} ", conv.search_query), cyan),
+                Span::raw(" "),
                 Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim),
             ])
         } else if !conv.initial_search_terms.is_empty() {
             let project_label = format_project_label(&conv.session);
             let filter_text = conv.initial_search_terms.join(" ");
             let cyan = Style::default().fg(app.theme.status_label_bg);
-            let mut spans = vec![
+            Line::from(vec![
                 Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
-                Span::styled(format!(" \"{}\" ", filter_text), cyan),
-            ];
-            if !conv.match_positions.is_empty() {
-                spans.push(Span::styled(
-                    format!("{}/{}", conv.current_match + 1, conv.match_positions.len()),
-                    cyan,
-                ));
-            }
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim));
-            Line::from(spans)
+                Span::styled(format!(" {} ", filter_text), cyan),
+                Span::raw(" "),
+                Span::styled("n/N next/prev  / search  Esc clear  Enter copy & exit", dim),
+            ])
         } else {
             let project_label = format_project_label(&conv.session);
             Line::from(vec![
