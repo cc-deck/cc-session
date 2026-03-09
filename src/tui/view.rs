@@ -113,15 +113,25 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
     let full_content_area = chunks[0];
     let status_area = chunks[1];
 
-    let terminal_width = full_content_area.width;
+    // Draw border around the full area with title
+    let border_style = Style::default().fg(app.theme.text_dim);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .title(" cc-session ")
+        .title_style(Style::default().fg(app.theme.cursor_color).bold());
+    let inner_area = block.inner(full_content_area);
+    frame.render_widget(block, full_content_area);
+
+    let terminal_width = inner_area.width;
     let content_width = terminal_width.min(MAX_CONTENT_WIDTH);
     let left_margin = (terminal_width.saturating_sub(content_width)) / 2;
 
     let content_area = Rect {
-        x: full_content_area.x + left_margin,
-        y: full_content_area.y,
+        x: inner_area.x + left_margin,
+        y: inner_area.y,
         width: content_width,
-        height: full_content_area.height,
+        height: inner_area.height,
     };
 
     let height = content_area.height as usize;

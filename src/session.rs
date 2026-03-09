@@ -195,7 +195,8 @@ pub fn strip_system_blocks(text: &str) -> String {
 pub fn clean_message(text: &str) -> String {
     let system_stripped = strip_system_blocks(text);
     let stripped = strip_tags(&system_stripped);
-    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
+    let compressed = compress_skill_expansion(&stripped);
+    compressed.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Strip system blocks and XML markup tags, preserving line breaks.
@@ -204,9 +205,45 @@ pub fn clean_message(text: &str) -> String {
 pub fn clean_message_multiline(text: &str) -> String {
     let system_stripped = strip_system_blocks(text);
     let stripped = strip_tags(&system_stripped);
-    let lines: Vec<&str> = stripped.lines().map(|l| l.trim_end()).collect();
+    let compressed = compress_skill_expansion(&stripped);
+    let lines: Vec<&str> = compressed.lines().map(|l| l.trim_end()).collect();
     let result = lines.join("\n");
     result.trim().to_string()
+}
+
+/// Compress expanded skill invocations back to their original short form.
+///
+/// Claude Code expands `/skill:name args` into a full skill template followed
+/// by `ARGUMENTS: args`. This function detects that pattern and compresses it
+/// back to `/skill:name args`.
+fn compress_skill_expansion(text: &str) -> String {
+    // Look for "ARGUMENTS: " preceded by a blank line (the separator)
+    let args = if let Some(pos) = text.rfind("\nARGUMENTS: ") {
+        text[pos + "\nARGUMENTS: ".len()..].trim()
+    } else if let Some(pos) = text.rfind("\n\nARGUMENTS: ") {
+        text[pos + "\n\nARGUMENTS: ".len()..].trim()
+    } else {
+        return text.to_string();
+    };
+
+    // Extract skill name from {Skill: name} if present at the start
+    let skill_name = text
+        .strip_prefix("{Skill: ")
+        .and_then(|rest| rest.split('}').next());
+
+    if let Some(name) = skill_name {
+        if args.is_empty() {
+            format!("/{name}")
+        } else {
+            format!("/{name} {args}")
+        }
+    } else if args.is_empty() {
+        // Template expansion without {Skill:} prefix, no args
+        text.to_string()
+    } else {
+        // Template expansion without {Skill:} prefix, just show args
+        args.to_string()
+    }
 }
 
 /// Strip XML-like tags from text, preserving other content.
