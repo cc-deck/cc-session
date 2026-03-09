@@ -100,6 +100,26 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
 
     let paragraph = Paragraph::new(text).block(block);
     frame.render_widget(paragraph, area);
+
+    // Render vertical scrollbar
+    let total = app.display_entries.len();
+    let visible = area.height.saturating_sub(2) as usize;
+    if total > visible {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::default().fg(app.theme.text_dim))
+            .begin_symbol(None)
+            .end_symbol(None);
+        let mut scrollbar_state =
+            ScrollbarState::new(total.saturating_sub(visible)).position(app.scroll_offset);
+        frame.render_stateful_widget(
+            scrollbar,
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+            &mut scrollbar_state,
+        );
+    }
 }
 
 const MAX_CONTENT_WIDTH: u16 = 120;
