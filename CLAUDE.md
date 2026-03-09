@@ -25,13 +25,13 @@ Releases use cargo-dist via GitHub Actions, triggered by pushing annotated tags.
 ### Steps
 
 1. Collect changes since last release: `git log <last-tag>..HEAD --oneline`
-2. Create release notes in `CHANGELOG.md` (prepend new section)
+2. Create release notes in `CHANGELOG.md` (prepend new section for the new version)
 3. Bump version in `Cargo.toml`
 4. Commit version bump and changelog together
 5. Create annotated tag: `git tag -a v<version> -m "<one-line summary>"`
 6. Push: `git push origin main v<version>`
-7. Wait for cargo-dist CI to create the GitHub release
-8. Edit the release to prepend the changelog section: `gh release edit v<version> --notes-file -`
+7. cargo-dist CI creates the GitHub release and reads CHANGELOG.md automatically
+8. Verify: `gh release view v<version>`
 
 ### Changelog Format
 
