@@ -216,33 +216,46 @@ pub fn clean_message_multiline(text: &str) -> String {
 /// Claude Code expands `/skill:name args` into a full skill template followed
 /// by `ARGUMENTS: args`. This function detects that pattern and compresses it
 /// back to `/skill:name args`.
+///
+/// Also handles bare `{Skill: name}` without ARGUMENTS (no-arg invocations).
 fn compress_skill_expansion(text: &str) -> String {
-    // Look for "ARGUMENTS: " preceded by a blank line (the separator)
-    let args = if let Some(pos) = text.rfind("\nARGUMENTS: ") {
-        text[pos + "\nARGUMENTS: ".len()..].trim()
-    } else if let Some(pos) = text.rfind("\n\nARGUMENTS: ") {
-        text[pos + "\n\nARGUMENTS: ".len()..].trim()
-    } else {
-        return text.to_string();
-    };
-
     // Extract skill name from {Skill: name} if present at the start
     let skill_name = text
         .strip_prefix("{Skill: ")
         .and_then(|rest| rest.split('}').next());
 
-    if let Some(name) = skill_name {
-        if args.is_empty() {
-            format!("/{name}")
-        } else {
-            format!("/{name} {args}")
+    // Look for "ARGUMENTS: " preceded by a newline (the separator)
+    let args_text = text
+        .rfind("\n\nARGUMENTS: ")
+        .map(|pos| text[pos + "\n\nARGUMENTS: ".len()..].trim())
+        .or_else(|| {
+            text.rfind("\nARGUMENTS: ")
+                .map(|pos| text[pos + "\nARGUMENTS: ".len()..].trim())
+        });
+
+    match (skill_name, args_text) {
+        // {Skill: name} with ARGUMENTS
+        (Some(name), Some(args)) if !args.is_empty() => format!("/{name} {args}"),
+        (Some(name), Some(_)) => format!("/{name}"),
+        // {Skill: name} without ARGUMENTS (bare invocation)
+        (Some(name), None) => {
+            // Check if the entire message is just "{Skill: name}" possibly with trailing whitespace/template
+            // If there's substantial content after the {Skill:} line, it's a template expansion
+            let after_skill = text
+                .find('}')
+                .map(|pos| text[pos + 1..].trim())
+                .unwrap_or("");
+            if after_skill.is_empty() {
+                format!("/{name}")
+            } else {
+                // Template expansion without ARGUMENTS, keep as-is but prefix with skill name
+                format!("/{name}")
+            }
         }
-    } else if args.is_empty() {
-        // Template expansion without {Skill:} prefix, no args
-        text.to_string()
-    } else {
-        // Template expansion without {Skill:} prefix, just show args
-        args.to_string()
+        // No {Skill:} prefix but has ARGUMENTS (template-only expansion)
+        (None, Some(args)) if !args.is_empty() => args.to_string(),
+        // No skill, no args match - return as-is
+        _ => text.to_string(),
     }
 }
 
