@@ -1,7 +1,8 @@
 use chrono::Utc;
 use chrono_humanize::{Accuracy, HumanTime, Tense};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::layout::Margin;
+use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
 
 use crate::session::{ConversationMessage, MessageRole};
 
@@ -227,6 +228,20 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 
         let paragraph = Paragraph::new(text);
         frame.render_widget(paragraph, content_area);
+
+        // Render vertical scrollbar on the right edge of the border
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::default().fg(app.theme.text_dim));
+        let mut scrollbar_state = ScrollbarState::new(total_lines.saturating_sub(height))
+            .position(conv.scroll_offset);
+        frame.render_stateful_widget(
+            scrollbar,
+            full_content_area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+            &mut scrollbar_state,
+        );
     }
 
     render_conversation_status(frame, app, status_area);
