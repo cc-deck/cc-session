@@ -189,7 +189,10 @@ fn file_matches(path: &Path, re: &Regex) -> bool {
 /// within the first 500 chars to handle newer Claude Code JSON formats
 /// that include additional metadata fields before the type.
 fn extract_entry_type(line: &str) -> &str {
-    let prefix = &line[..line.len().min(500)];
+    // Find a safe UTF-8 boundary near 500 bytes
+    let max_len = line.len().min(500);
+    let safe_end = (0..=max_len).rev().find(|&i| line.is_char_boundary(i)).unwrap_or(0);
+    let prefix = &line[..safe_end];
     let needle = "\"type\":\"";
     let mut search_from = 0;
     while let Some(pos) = prefix[search_from..].find(needle) {
