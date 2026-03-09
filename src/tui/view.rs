@@ -113,13 +113,28 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
     let full_content_area = chunks[0];
     let status_area = chunks[1];
 
-    // Draw border around the full area with title
+    // Compute scroll percentage for title
+    let scroll_pct = if let Some(conv) = &app.conversation {
+        let total = conv.lines.len();
+        let height = full_content_area.height.saturating_sub(2) as usize; // account for borders
+        if total <= height {
+            100
+        } else {
+            let max_scroll = total.saturating_sub(height);
+            ((conv.scroll_offset as f64 / max_scroll as f64) * 100.0).round() as usize
+        }
+    } else {
+        0
+    };
+
+    // Draw border around the full area with title and scroll position
     let border_style = Style::default().fg(app.theme.text_dim);
+    let title_style = Style::default().fg(app.theme.cursor_color).bold();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(" cc-session ")
-        .title_style(Style::default().fg(app.theme.cursor_color).bold());
+        .title(format!(" cc-session ({scroll_pct}%) "))
+        .title_style(title_style);
     let inner_area = block.inner(full_content_area);
     frame.render_widget(block, full_content_area);
 

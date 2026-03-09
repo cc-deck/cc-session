@@ -205,11 +205,15 @@ pub fn load_conversation(claude_home: &Path, session: &Session) -> Vec<Conversat
             .and_then(|t| t.parse().ok())
             .unwrap_or_else(Utc::now);
 
-        // Merge consecutive messages from the same role
+        // Merge consecutive messages from the same role, skipping duplicates
         if let Some(last) = messages.last_mut() {
             if last.role == role {
-                last.text.push_str("\n\n");
-                last.text.push_str(&text);
+                // Skip if the text is a duplicate of the last segment
+                // (happens with skill expansions that get repeated in JSONL)
+                if !last.text.ends_with(&text) {
+                    last.text.push_str("\n\n");
+                    last.text.push_str(&text);
+                }
                 // Keep the latest timestamp
                 last.timestamp = timestamp;
                 continue;
