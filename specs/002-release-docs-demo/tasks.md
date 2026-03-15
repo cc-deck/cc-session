@@ -33,7 +33,7 @@
 ### Implementation for User Story 1
 
 - [ ] T003 (cc-session-61r.1) [US1] Run `cargo dist init` with targets x86_64-apple-darwin, aarch64-apple-darwin, x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu. This generates `.github/workflows/release.yml` and adds `[workspace.metadata.dist]` to `Cargo.toml`.
-- [ ] T004 (cc-session-61r.2) [US1] Add Homebrew tap configuration to `Cargo.toml`: set `tap = "rhuss/homebrew-tap"` and `publish-jobs = ["homebrew"]` in the `[workspace.metadata.dist]` section.
+- [ ] T004 (cc-session-61r.2) [US1] Add Homebrew tap configuration to `Cargo.toml`: set `tap = "cc-deck/homebrew-tap"` and `publish-jobs = ["homebrew"]` in the `[workspace.metadata.dist]` section.
 - [ ] T005 (cc-session-61r.3) [US1] Verify the generated `.github/workflows/release.yml` triggers on tag push (pattern `v*`), builds all 4 targets, and publishes to GitHub Releases.
 - [ ] T006 (cc-session-61r.4) [US1] Test the release pipeline by running `cargo dist plan` locally to verify configuration is valid.
 
@@ -50,7 +50,7 @@
 ### Implementation for User Story 2
 
 - [ ] T007 (cc-session-c9y.1) [US2] Write `README.md` with structure: GIF demo placeholder, "Why this matters" section explaining the problem (finding Claude sessions across projects is tedious), features list (TUI, filter, detail view, scriptable mode, deep search, quick mode, shell integration).
-- [ ] T008 (cc-session-c9y.2) [US2] Add installation section to `README.md` covering three methods: Homebrew (`brew install rhuss/tap/cc-session`), install script (curl one-liner from cargo-dist), and building from source (`cargo install --git`).
+- [ ] T008 (cc-session-c9y.2) [US2] Add installation section to `README.md` covering three methods: Homebrew (`brew install cc-deck/tap/cc-session`), install script (curl one-liner from cargo-dist), and building from source (`cargo install --git`).
 - [ ] T009 (cc-session-c9y.3) [US2] Add usage section to `README.md` documenting: default TUI mode, filter mode (`/`), detail view (Enter), scriptable mode (`-s`), deep search (`-g`), quick mode (`-q`), time filters (`--since`, `--last`), shell integration (`--shell-setup --install`). Include example commands for each.
 - [ ] T010 (cc-session-c9y.4) [US2] Add key bindings table to `README.md` covering all TUI interactions: j/k (navigate), / (filter), Enter (detail/select), Esc (back/quit), q (quit), Ctrl-G (deep search), Tab (switch buttons in detail view).
 - [ ] T011 (cc-session-c9y.5) [US2] Add "How it works" section to `README.md` explaining: session discovery from `~/.claude/projects/`, parallel JSONL scanning, fuzzy matching, clipboard integration, markup stripping.

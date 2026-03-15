@@ -25,7 +25,7 @@ ROWS=32
 for cmd in asciinema tmux cc-session; do
   if ! command -v "$cmd" &>/dev/null; then
     echo "Error: $cmd is not installed."
-    [ "$cmd" = "cc-session" ] && echo "Install with: brew install rhuss/tap/cc-session"
+    [ "$cmd" = "cc-session" ] && echo "Install with: brew install cc-deck/tap/cc-session"
     [ "$cmd" = "asciinema" ] && echo "Install with: brew install asciinema"
     [ "$cmd" = "tmux" ] && echo "Install with: brew install tmux"
     exit 1

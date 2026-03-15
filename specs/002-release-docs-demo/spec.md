@@ -9,16 +9,16 @@
 
 ### User Story 1 - Install via Homebrew (Priority: P1)
 
-A developer hears about cc-session and wants to install it. They run `brew install rhuss/tap/cc-session` and the tool is available immediately. The formula pulls a pre-built binary for their platform (macOS or Linux, arm64 or amd64) from a GitHub release.
+A developer hears about cc-session and wants to install it. They run `brew install cc-deck/tap/cc-session` and the tool is available immediately. The formula pulls a pre-built binary for their platform (macOS or Linux, arm64 or amd64) from a GitHub release.
 
 **Why this priority**: Without a release mechanism, the tool can't be distributed. Homebrew is the primary install channel for the target audience (developers on macOS/Linux).
 
-**Independent Test**: Run `brew install rhuss/tap/cc-session` on a clean machine and verify `cc-session --version` works.
+**Independent Test**: Run `brew install cc-deck/tap/cc-session` on a clean machine and verify `cc-session --version` works.
 
 **Acceptance Scenarios**:
 
-1. **Given** a developer on macOS (arm64 or amd64), **When** they run `brew install rhuss/tap/cc-session`, **Then** the tool is installed and `cc-session --version` prints the current version.
-2. **Given** a developer on Linux (amd64 or arm64), **When** they run `brew install rhuss/tap/cc-session`, **Then** the tool is installed and functional.
+1. **Given** a developer on macOS (arm64 or amd64), **When** they run `brew install cc-deck/tap/cc-session`, **Then** the tool is installed and `cc-session --version` prints the current version.
+2. **Given** a developer on Linux (amd64 or arm64), **When** they run `brew install cc-deck/tap/cc-session`, **Then** the tool is installed and functional.
 3. **Given** a new version is tagged in the repository, **When** the release pipeline runs, **Then** pre-built binaries for all 4 platform targets are published to a GitHub release and the Homebrew formula is updated automatically.
 4. **Given** a developer without Homebrew, **When** they run the install script via curl, **Then** the binary is downloaded, checksum-verified, and installed to a local directory.
 
@@ -73,7 +73,7 @@ A maintainer wants to update the demo GIF after a UI change. They run the demo s
 
 - **FR-001**: The project MUST have an automated release pipeline that builds binaries for macOS (arm64, amd64) and Linux (arm64, amd64) when a version tag is pushed.
 - **FR-002**: Each release MUST publish pre-built binaries and checksums to a GitHub release.
-- **FR-003**: Each release MUST update the Homebrew formula in the `rhuss/homebrew-tap` repository automatically.
+- **FR-003**: Each release MUST update the Homebrew formula in the `cc-deck/homebrew-tap` repository automatically.
 - **FR-004**: The project MUST include an install script that downloads the correct binary for the user's platform, verifies its checksum, and installs it to a local directory.
 - **FR-005**: The project MUST be installable via `cargo install cc-session` from crates.io or from source.
 
@@ -81,7 +81,7 @@ A maintainer wants to update the demo GIF after a UI change. They run the demo s
 
 - **FR-006**: The project MUST have a README with a GIF demo at the top, followed by: problem statement, features, installation, quick start, usage (all modes), shell integration, key bindings, and architecture overview.
 - **FR-007**: The README structure MUST follow the same style as the cc-setup project for consistency across the cc-* tool family.
-- **FR-008**: Installation instructions MUST cover three methods: Homebrew (`brew install rhuss/tap/cc-session`), install script (curl one-liner), and building from source.
+- **FR-008**: Installation instructions MUST cover three methods: Homebrew (`brew install cc-deck/tap/cc-session`), install script (curl one-liner), and building from source.
 - **FR-009**: The README MUST document all CLI flags, TUI key bindings, and modes with usage examples.
 
 #### Demo
@@ -93,7 +93,7 @@ A maintainer wants to update the demo GIF after a UI change. They run the demo s
 ### Key Entities
 
 - **Release**: A versioned distribution of the cc-session binary for multiple platforms, published to GitHub Releases and Homebrew.
-- **Formula**: A Homebrew package definition in `rhuss/homebrew-tap` that points to the release binary URLs and checksums.
+- **Formula**: A Homebrew package definition in `cc-deck/homebrew-tap` that points to the release binary URLs and checksums.
 - **Demo Fixture**: A set of fake session JSONL files mimicking the `~/.claude/` directory structure with realistic but synthetic data.
 
 ## Success Criteria *(mandatory)*
@@ -108,8 +108,8 @@ A maintainer wants to update the demo GIF after a UI change. They run the demo s
 
 ## Assumptions
 
-- The GitHub repository `rhuss/cc-session` will be created for the public release.
-- The existing `rhuss/homebrew-tap` repository accepts formula additions for new tools.
+- The GitHub repository `cc-deck/cc-session` will be created for the public release.
+- The existing `cc-deck/homebrew-tap` repository accepts formula additions for new tools.
 - The developer has `asciinema` and `agg` installed for demo GIF generation (not required for end users).
 - The project uses semver tags (e.g., `v0.1.0`) to trigger releases.
 - `cargo install` requires users to have a Rust toolchain installed.

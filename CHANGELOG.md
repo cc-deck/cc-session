@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.4
+
+### What's New
+
+- **Repository transfer**: Moved from `rhuss/cc-session` to `cc-deck/cc-session`. All URLs, Homebrew tap references, and release pipeline updated accordingly.
+
 ## v0.7.3
 
 ### What's New

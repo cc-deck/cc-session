@@ -26,19 +26,19 @@ cc-session fixes this by scanning all your sessions, presenting them in a search
 ### macOS (Homebrew)
 
 ```bash
-brew install rhuss/tap/cc-session
+brew install cc-deck/tap/cc-session
 ```
 
 ### Linux / macOS (install script)
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/rhuss/cc-session/releases/latest/download/cc-session-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cc-deck/cc-session/releases/latest/download/cc-session-installer.sh | sh
 ```
 
 ### Build from source
 
 ```bash
-cargo install --git https://github.com/rhuss/cc-session
+cargo install --git https://github.com/cc-deck/cc-session
 ```
 
 Requires a [Rust toolchain](https://rustup.rs/).

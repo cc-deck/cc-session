@@ -51,5 +51,5 @@ Keep entries concise. Group by: "What's New" for features/improvements, "Bug Fix
 ### Important
 
 - Do NOT create GH releases manually (cargo-dist CI creates them)
-- Homebrew tap at rhuss/tap updates automatically
+- Homebrew tap at cc-deck/tap updates automatically
 - GPG signing can timeout; use `-c commit.gpgsign=false` or `-c tag.gpgsign=false` if needed

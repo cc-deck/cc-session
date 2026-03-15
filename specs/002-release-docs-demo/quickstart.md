@@ -25,11 +25,11 @@ cd demo/
 
 ```bash
 # Homebrew
-brew install rhuss/tap/cc-session
+brew install cc-deck/tap/cc-session
 
 # Install script
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/rhuss/cc-session/releases/latest/download/cc-session-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cc-deck/cc-session/releases/latest/download/cc-session-installer.sh | sh
 
 # From source
-cargo install --git https://github.com/rhuss/cc-session
+cargo install --git https://github.com/cc-deck/cc-session
 ```

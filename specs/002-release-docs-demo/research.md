@@ -14,12 +14,12 @@
 
 ## Decision 2: Homebrew Tap Integration
 
-**Decision**: Publish to existing `rhuss/homebrew-tap` via cargo-dist's built-in Homebrew support
-**Rationale**: cargo-dist natively supports `tap = "rhuss/homebrew-tap"` in Cargo.toml metadata. It generates the formula, runs `brew style --fix`, and commits to the tap repo. Same tap used by cc-setup for a unified `brew install rhuss/tap/cc-session` experience.
+**Decision**: Publish to existing `cc-deck/homebrew-tap` via cargo-dist's built-in Homebrew support
+**Rationale**: cargo-dist natively supports `tap = "cc-deck/homebrew-tap"` in Cargo.toml metadata. It generates the formula, runs `brew style --fix`, and commits to the tap repo. Same tap used by cc-setup for a unified `brew install cc-deck/tap/cc-session` experience.
 **Configuration**:
 ```toml
 [workspace.metadata.dist]
-tap = "rhuss/homebrew-tap"
+tap = "cc-deck/homebrew-tap"
 publish-jobs = ["homebrew"]
 ```
 **Alternatives considered**:

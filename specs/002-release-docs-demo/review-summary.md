@@ -9,7 +9,7 @@
 
 cc-session is a working CLI tool that finds and resumes Claude Code sessions, but it currently has no way for users to install it, no documentation, and no visual demo. This feature addresses all three gaps in one coordinated effort.
 
-The release pipeline uses cargo-dist (the Rust equivalent of GoReleaser) to build cross-platform binaries and publish them to the existing `rhuss/homebrew-tap`. Users will install via `brew install rhuss/tap/cc-session`, a curl script, or from source. The README follows the same structure as cc-setup (the companion tool) for a consistent cc-* tool family experience. A reproducible demo GIF is generated from fake session data to avoid exposing private content.
+The release pipeline uses cargo-dist (the Rust equivalent of GoReleaser) to build cross-platform binaries and publish them to the existing `cc-deck/homebrew-tap`. Users will install via `brew install cc-deck/tap/cc-session`, a curl script, or from source. The README follows the same structure as cc-setup (the companion tool) for a consistent cc-* tool family experience. A reproducible demo GIF is generated from fake session data to avoid exposing private content.
 
 ## PR Contents
 
@@ -34,10 +34,10 @@ The release pipeline uses cargo-dist (the Rust equivalent of GoReleaser) to buil
 
 ### Shared Homebrew tap
 
-- **Chosen approach:** Publish to existing `rhuss/homebrew-tap` alongside cc-setup's formula
+- **Chosen approach:** Publish to existing `cc-deck/homebrew-tap` alongside cc-setup's formula
 - **Alternatives considered:**
   - Separate tap per tool: Unnecessary fragmentation
-- **Trade-off:** Shared tap means both tools are at `brew install rhuss/tap/<tool>`, clean and consistent
+- **Trade-off:** Shared tap means both tools are at `brew install cc-deck/tap/<tool>`, clean and consistent
 
 ### asciinema + agg for demo
 
@@ -59,7 +59,7 @@ The release pipeline uses cargo-dist (the Rust equivalent of GoReleaser) to buil
 
 ### Verify
 - [ ] cargo-dist targets cover all 4 platforms (macOS/Linux x arm64/amd64)
-- [ ] Homebrew tap config points to correct repo (rhuss/homebrew-tap)
+- [ ] Homebrew tap config points to correct repo (cc-deck/homebrew-tap)
 - [ ] README structure matches cc-setup for consistency
 - [ ] Demo script uses CLAUDE_HOME override (not real sessions)
 

@@ -1,15 +1,15 @@
 [package]
 name = "cc-session"
-version = "0.7.3"
+version = "0.7.4"
 edition = "2021"
 rust-version = "1.80.0"
 description = "Fast CLI tool for finding and resuming Claude Code sessions"
 license = "MIT"
-repository = "https://github.com/rhuss/cc-session"
+repository = "https://github.com/cc-deck/cc-session"
 readme = "README.md"
 keywords = ["claude", "cli", "tui", "session"]
 categories = ["command-line-utilities"]
-homepage = "https://github.com/rhuss/cc-session"
+homepage = "https://github.com/cc-deck/cc-session"
 
 [dependencies]
 ratatui = "0.30"
