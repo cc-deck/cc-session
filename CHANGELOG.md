@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.5
+
+### What's New
+
+- **Keyword search**: Search now splits on spaces and ANDs all keywords. Both session list filtering and in-conversation search support this. Use `"quoted phrases"` for literal multi-word terms.
+
 ## v0.7.4
 
 ### What's New

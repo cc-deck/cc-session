@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use regex::Regex;
 
+use crate::filter::parse_keywords;
 use crate::session::{clean_message, Session, SessionFileEntry, strip_system_blocks, strip_tags};
 
 /// Build a file-path-to-session index from discovered sessions.
@@ -30,9 +31,11 @@ pub fn build_session_index(claude_home: &Path, sessions: &[Session]) -> HashMap<
     index
 }
 
-/// Search through all session JSONL files for lines matching `pattern`,
+/// Search through all session JSONL files for lines matching all keywords,
 /// using a pre-built session index to avoid re-parsing metadata.
 ///
+/// Keywords are parsed from the pattern (space-separated, quoted phrases preserved).
+/// All keywords must match somewhere in the file (AND logic).
 /// Falls back to parsing the file if no index entry exists.
 pub fn deep_search_indexed(
     claude_home: &Path,
@@ -40,18 +43,22 @@ pub fn deep_search_indexed(
     session_index: &HashMap<PathBuf, Session>,
     cancel: &Arc<AtomicBool>,
 ) -> Vec<Session> {
-    let ci_pattern = if pattern.starts_with("(?") {
-        pattern.to_string()
-    } else {
-        format!("(?i){}", pattern)
-    };
-    let re = match Regex::new(&ci_pattern) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Invalid search pattern: {e}");
-            return Vec::new();
-        }
-    };
+    let keywords = parse_keywords(pattern);
+    if keywords.is_empty() {
+        return Vec::new();
+    }
+
+    let regexes: Vec<Regex> = keywords
+        .iter()
+        .filter_map(|kw| {
+            let escaped = regex::escape(kw);
+            Regex::new(&format!("(?i){escaped}")).ok()
+        })
+        .collect();
+
+    if regexes.is_empty() {
+        return Vec::new();
+    }
 
     let projects_dir = claude_home.join("projects");
     if !projects_dir.is_dir() {
@@ -84,7 +91,7 @@ pub fn deep_search_indexed(
             if cancel.load(Ordering::Relaxed) {
                 return None;
             }
-            if !file_matches(path, &re) {
+            if !file_matches_all(path, &regexes) {
                 return None;
             }
             // Fast path: look up in pre-built index
@@ -92,7 +99,8 @@ pub fn deep_search_indexed(
                 return Some(session.clone());
             }
             // Fallback: parse file for metadata (undiscovered session)
-            search_file_with_metadata(path, &re)
+            let fallback_re = &regexes[0];
+            search_file_with_metadata(path, fallback_re)
         })
         .collect();
 
@@ -147,16 +155,19 @@ pub fn deep_search(claude_home: &Path, pattern: &str) -> Vec<Session> {
     sessions
 }
 
-/// Check if any user/assistant message in a JSONL file matches the regex.
+/// Check if all regexes match somewhere in user/assistant messages of a JSONL file.
 ///
 /// Only searches within user and assistant entries, and strips XML-like
 /// tags (system-reminder, local-command-caveat, etc.) before matching
 /// to avoid false positives from system-injected content.
-fn file_matches(path: &Path, re: &Regex) -> bool {
+/// All regexes must match (AND logic), possibly on different lines.
+fn file_matches_all(path: &Path, regexes: &[Regex]) -> bool {
     let file = match fs::File::open(path) {
         Ok(f) => f,
         Err(_) => return false,
     };
+
+    let mut matched = vec![false; regexes.len()];
 
     let reader = BufReader::new(file);
     for line in reader.lines() {
@@ -164,20 +175,32 @@ fn file_matches(path: &Path, re: &Regex) -> bool {
             Ok(l) => l,
             Err(_) => continue,
         };
-        // Quick check: does the raw line match at all?
-        if !re.is_match(&line) {
+
+        // Quick check: does any unmatched regex match the raw line?
+        let dominated_any = regexes
+            .iter()
+            .enumerate()
+            .any(|(i, re)| !matched[i] && re.is_match(&line));
+        if !dominated_any {
             continue;
         }
-        // Parse the entry type properly (simple string check can false-match
-        // against nested JSON content like type=progress containing "type":"user")
+
         let entry_type = extract_entry_type(&line);
         if entry_type != "user" && entry_type != "assistant" {
             continue;
         }
+
         // Strip system blocks then tags (same pipeline as conversation viewer)
         let system_stripped = strip_system_blocks(&line);
         let cleaned = strip_tags(&system_stripped);
-        if re.is_match(&cleaned) {
+
+        for (i, re) in regexes.iter().enumerate() {
+            if !matched[i] && re.is_match(&cleaned) {
+                matched[i] = true;
+            }
+        }
+
+        if matched.iter().all(|&m| m) {
             return true;
         }
     }

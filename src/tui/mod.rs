@@ -269,14 +269,7 @@ impl App {
         let claude_home = get_claude_home();
         let messages = load_conversation(&claude_home, &session);
 
-        let initial_search_terms: Vec<String> = {
-            let trimmed = self.filter_query.trim();
-            if !trimmed.is_empty() {
-                vec![trimmed.to_string()]
-            } else {
-                Vec::new()
-            }
-        };
+        let initial_search_terms = crate::filter::parse_keywords(&self.filter_query);
 
         self.conversation = Some(ConversationState {
             session,

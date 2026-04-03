@@ -179,7 +179,7 @@ fn render_conversation(frame: &mut Frame, app: &mut App, area: Rect) {
 
         if conv.rendered_width != content_width || conv.lines.is_empty() {
             let search_terms: Vec<String> = if !conv.search_query.is_empty() {
-                vec![conv.search_query.clone()]
+                crate::filter::parse_keywords(&conv.search_query)
             } else {
                 conv.initial_search_terms.clone()
             };
@@ -976,13 +976,9 @@ fn highlight_terms<'a>(
 }
 
 /// Get the active search terms for highlighting from the app state.
-/// Returns the full query as a single term (spaces are literal).
+/// Parses keywords from the filter query (space-separated, quoted phrases preserved).
 fn search_terms(app: &App) -> Vec<String> {
-    let trimmed = app.filter_query.trim();
-    if !trimmed.is_empty() {
-        return vec![trimmed.to_string()];
-    }
-    Vec::new()
+    crate::filter::parse_keywords(&app.filter_query)
 }
 
 /// Format project label as "project_name (branch)" for the conversation status bar.
