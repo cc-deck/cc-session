@@ -1,10 +1,16 @@
 # Changelog
 
+## v0.7.7
+
+### What's New
+
+- **Alt+Enter for clipboard**: Changed clipboard copy keybinding from Shift+Enter to Alt+Enter (⌥Enter) to avoid conflicts with terminal emulators.
+
 ## v0.7.6
 
 ### What's New
 
-- **Direct session resume**: Enter in conversation view now launches `claude -r <id>` directly instead of copying to clipboard. Shift+Enter (⇧Enter) preserves the old clipboard behavior.
+- **Direct session resume**: Enter in conversation view now launches `claude -r <id>` directly instead of copying to clipboard. Alt+Enter (⌥Enter) copies the resume command to clipboard.
 - **Makefile**: Added `make build`, `make install`, `make test`, `make clippy`, `make clean` targets.
 
 ## v0.7.5
