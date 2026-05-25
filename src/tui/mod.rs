@@ -74,6 +74,7 @@ pub enum Action {
     Quit,
     EnterConversation(usize),
     CopyCommand(String),
+    ExecCommand(String),
     BackToList,
 }
 
@@ -446,6 +447,10 @@ pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::erro
                             break;
                         }
                     },
+                    Action::ExecCommand(cmd) => {
+                        deferred_command = Some(cmd);
+                        break;
+                    }
                     Action::BackToList => {
                         app.leave_conversation();
                     }
@@ -460,7 +465,18 @@ pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::erro
     terminal.show_cursor()?;
 
     if let Some(cmd) = deferred_command {
-        println!("{cmd}");
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let status = std::process::Command::new(&shell)
+            .arg("-ic")
+            .arg(&cmd)
+            .status();
+        match status {
+            Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+            Err(e) => {
+                eprintln!("Failed to exec: {e}");
+                println!("{cmd}");
+            }
+        }
     }
 
     Ok(())
