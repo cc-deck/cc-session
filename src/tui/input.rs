@@ -215,7 +215,7 @@ fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Enter => {
             if let Some(conv) = &app.conversation {
                 let cmd = conv.session.resume_command();
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                if key.modifiers.contains(KeyModifiers::ALT) {
                     Action::CopyCommand(cmd)
                 } else {
                     Action::ExecCommand(cmd)

@@ -330,7 +330,7 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
                 Span::styled(format!(" {} ", conv.search_query), cyan),
                 Span::raw(" "),
-                Span::styled("n/N next/prev  / search  Esc clear  Enter resume  ⇧Enter copy", dim),
+                Span::styled("n/N next/prev  / search  Esc clear  Enter resume  ⌥Enter copy", dim),
             ])
         } else if !conv.initial_search_terms.is_empty() {
             let project_label = format_project_label(&conv.session);
@@ -340,7 +340,7 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!(" {} ", project_label), Style::default().fg(Color::Green).bold()),
                 Span::styled(format!(" {} ", filter_text), cyan),
                 Span::raw(" "),
-                Span::styled("n/N next/prev  / search  Esc clear  Enter resume  ⇧Enter copy", dim),
+                Span::styled("n/N next/prev  / search  Esc clear  Enter resume  ⌥Enter copy", dim),
             ])
         } else {
             let project_label = format_project_label(&conv.session);
@@ -351,7 +351,7 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                 ),
                 Span::raw(" "),
                 Span::styled(
-                    "Space/b scroll  g/G top/bottom  / search  Enter resume  ⇧Enter copy  Esc back",
+                    "Space/b scroll  g/G top/bottom  / search  Enter resume  ⌥Enter copy  Esc back",
                     dim,
                 ),
             ])
