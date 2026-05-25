@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.6
+
+### What's New
+
+- **Direct session resume**: Enter in conversation view now launches `claude -r <id>` directly instead of copying to clipboard. Shift+Enter (⇧Enter) preserves the old clipboard behavior.
+- **Makefile**: Added `make build`, `make install`, `make test`, `make clippy`, `make clean` targets.
+
 ## v0.7.5
 
 ### What's New
