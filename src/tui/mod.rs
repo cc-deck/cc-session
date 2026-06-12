@@ -74,7 +74,7 @@ pub enum Action {
     Quit,
     EnterConversation(usize),
     CopyCommand(String),
-    ExecCommand(String),
+    ExecCommand { cmd: String, cwd: String },
     BackToList,
 }
 
@@ -392,7 +392,11 @@ impl App {
 }
 
 /// Run the interactive TUI session picker.
-pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(
+    sessions: Vec<Session>,
+    theme: Theme,
+    cd_file: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     if sessions.is_empty() {
         eprintln!("No sessions found.");
         return Ok(());
@@ -415,6 +419,7 @@ pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::erro
     let session_index = search::build_session_index(&claude_home, &sessions);
     let mut app = App::new(sessions, session_index, theme);
     let mut deferred_command: Option<String> = None;
+    let mut deferred_cwd: Option<String> = None;
 
     loop {
         app.tick_status();
@@ -447,8 +452,9 @@ pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::erro
                             break;
                         }
                     },
-                    Action::ExecCommand(cmd) => {
+                    Action::ExecCommand { cmd, cwd } => {
                         deferred_command = Some(cmd);
+                        deferred_cwd = Some(cwd);
                         break;
                     }
                     Action::BackToList => {
@@ -465,6 +471,9 @@ pub fn run(sessions: Vec<Session>, theme: Theme) -> Result<(), Box<dyn std::erro
     terminal.show_cursor()?;
 
     if let Some(cmd) = deferred_command {
+        if let (Some(ref cd_path), Some(ref cwd)) = (&cd_file, &deferred_cwd) {
+            let _ = std::fs::write(cd_path, cwd);
+        }
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
         let status = std::process::Command::new(&shell)
             .arg("-ic")

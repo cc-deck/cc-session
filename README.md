@@ -59,6 +59,27 @@ cc-session --last 20
 cc-session --light
 ```
 
+## Stay in the project directory after exit
+
+By default, after resuming a session and exiting Claude Code, your shell returns to the directory where you launched cc-session. To stay in the session's project directory instead, add this shell wrapper to your `~/.zshrc` or `~/.bashrc`:
+
+```bash
+ccs() {
+  local tmp=$(mktemp)
+  cc-session --cd-file "$tmp" "$@"
+  local dir
+  dir=$(cat "$tmp" 2>/dev/null)
+  rm -f "$tmp"
+  if [ -n "$dir" ] && [ -d "$dir" ]; then
+    cd "$dir" || return
+  fi
+}
+```
+
+Then use `ccs` instead of `cc-session`. When you select a session with Enter, resume Claude, and then exit, your shell will be in the project directory.
+
+If you quit without selecting a session (Esc), no directory change happens.
+
 ## Usage
 
 Run `cc-session` to open the interactive session browser. Sessions are displayed one per line with the prompt text on the left and the project name + relative time on the right (dimmed).
@@ -124,7 +145,8 @@ cc-session --since 7d --last 10  # both constraints
 | `Down` / `Up` | Scroll down / up one line |
 | `/` | Search within conversation |
 | `n` / `N` | Jump to next / previous match |
-| `Enter` | Copy resume command to clipboard and exit |
+| `Enter` | Resume session (exec into Claude Code) |
+| `Alt+Enter` | Copy resume command to clipboard and exit |
 | `Esc` | Clear search (first), back to list (second) |
 
 ## How it works

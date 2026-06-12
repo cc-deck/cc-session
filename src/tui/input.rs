@@ -218,7 +218,8 @@ fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
                 if key.modifiers.contains(KeyModifiers::ALT) {
                     Action::CopyCommand(cmd)
                 } else {
-                    Action::ExecCommand(cmd)
+                    let cwd = conv.session.cwd.clone();
+                    Action::ExecCommand { cmd, cwd }
                 }
             } else {
                 Action::Continue

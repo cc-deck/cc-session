@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.8
+
+### What's New
+
+- **cd-on-quit**: New `--cd-file` option enables staying in the session's project directory after exiting Claude Code. Use the `ccs` shell wrapper function (see README) for automatic directory switching.
+
 ## v0.7.7
 
 ### What's New

@@ -33,6 +33,10 @@ struct Cli {
     /// Force dark color theme
     #[arg(long = "dark", conflicts_with = "light")]
     dark: bool,
+
+    /// Write session directory to this file on exec (for shell wrapper cd-on-quit)
+    #[arg(long = "cd-file", hide = true)]
+    cd_file: Option<String>,
 }
 
 /// Parse a human-friendly duration string into a chrono::Duration.
@@ -95,7 +99,7 @@ fn main() {
     };
 
     // Interactive TUI
-    if let Err(e) = tui::run(sessions, theme) {
+    if let Err(e) = tui::run(sessions, theme, cli.cd_file) {
         eprintln!("TUI error: {e}");
         std::process::exit(1);
     }
