@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use regex::Regex;
 
 use crate::filter::parse_keywords;
-use crate::session::{clean_message, Session, SessionFileEntry, strip_system_blocks, strip_tags};
+use crate::session::{clean_message, clean_message_multiline, Session, SessionFileEntry};
 
 /// Build a file-path-to-session index from discovered sessions.
 ///
@@ -157,9 +157,9 @@ pub fn deep_search(claude_home: &Path, pattern: &str) -> Vec<Session> {
 
 /// Check if all regexes match somewhere in user/assistant messages of a JSONL file.
 ///
-/// Only searches within user and assistant entries, and strips XML-like
-/// tags (system-reminder, local-command-caveat, etc.) before matching
-/// to avoid false positives from system-injected content.
+/// Only searches within the visible text content (same as the conversation viewer):
+/// parses JSON, extracts only "text"-type content blocks, then strips system
+/// blocks and tags. This avoids false positives from tool_use/tool_result payloads.
 /// All regexes must match (AND logic), possibly on different lines.
 fn file_matches_all(path: &Path, regexes: &[Regex]) -> bool {
     let file = match fs::File::open(path) {
@@ -176,7 +176,7 @@ fn file_matches_all(path: &Path, regexes: &[Regex]) -> bool {
             Err(_) => continue,
         };
 
-        // Quick check: does any unmatched regex match the raw line?
+        // Quick pre-filter: skip lines where no unmatched regex hits the raw text
         let dominated_any = regexes
             .iter()
             .enumerate()
@@ -190,9 +190,16 @@ fn file_matches_all(path: &Path, regexes: &[Regex]) -> bool {
             continue;
         }
 
-        // Strip system blocks then tags (same pipeline as conversation viewer)
-        let system_stripped = strip_system_blocks(&line);
-        let cleaned = strip_tags(&system_stripped);
+        // Parse JSON and extract only visible text content (same as conversation viewer)
+        let text = match serde_json::from_str::<SessionFileEntry>(&line) {
+            Ok(entry) => match &entry.message {
+                Some(m) => m.content.text(),
+                None => continue,
+            },
+            Err(_) => continue,
+        };
+
+        let cleaned = clean_message_multiline(&text);
 
         for (i, re) in regexes.iter().enumerate() {
             if !matched[i] && re.is_match(&cleaned) {
@@ -259,15 +266,20 @@ fn search_file_with_metadata(path: &Path, re: &Regex) -> Option<Session> {
             continue;
         }
 
-        if !found_match && re.is_match(&line) {
-            found_match = true;
-        }
-
-        if first_user_entry.is_none() {
-            if let Ok(entry) = serde_json::from_str::<SessionFileEntry>(&line) {
-                if entry.entry_type == "user" {
-                    first_user_entry = Some(entry);
+        if let Ok(entry) = serde_json::from_str::<SessionFileEntry>(&line) {
+            if !found_match
+                && (entry.entry_type == "user" || entry.entry_type == "assistant")
+            {
+                if let Some(m) = &entry.message {
+                    let text = clean_message_multiline(&m.content.text());
+                    if re.is_match(&text) {
+                        found_match = true;
+                    }
                 }
+            }
+
+            if first_user_entry.is_none() && entry.entry_type == "user" {
+                first_user_entry = Some(entry);
             }
         }
 

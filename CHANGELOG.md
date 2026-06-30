@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.9
+
+### Bug Fixes
+
+- **Content search false positives**: Fixed deep search matching against tool_use/tool_result payloads (Jira responses, web fetches, file contents) that are never shown in the conversation viewer. Search now extracts only visible text content before matching, consistent with what the viewer displays.
+
 ## v0.7.8
 
 ### What's New
