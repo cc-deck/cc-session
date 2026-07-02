@@ -229,11 +229,11 @@ fn handle_conversation(app: &mut App, key: KeyEvent) -> Action {
                 conv.search_active = true;
                 if conv.search_confirmed && !conv.search_query.is_empty() {
                     conv.search_replacing = true;
-                    conv.search_cursor = conv.search_query.len();
+                    conv.search_cursor = conv.search_query.chars().count();
                 } else if !conv.initial_search_terms.is_empty() {
                     conv.search_query = conv.initial_search_terms.join(" ");
                     conv.search_replacing = true;
-                    conv.search_cursor = conv.search_query.len();
+                    conv.search_cursor = conv.search_query.chars().count();
                 } else {
                     conv.search_query.clear();
                     conv.search_replacing = false;
@@ -298,7 +298,8 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
                     conv.search_cursor = 0;
                     conv.search_replacing = false;
                 } else if conv.search_cursor > 0 {
-                    conv.search_query.remove(conv.search_cursor - 1);
+                    let byte_idx = char_to_byte_index(&conv.search_query, conv.search_cursor - 1);
+                    conv.search_query.remove(byte_idx);
                     conv.search_cursor -= 1;
                 }
                 conv.rendered_width = 0;
@@ -318,10 +319,11 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Right => {
             if let Some(conv) = &mut app.conversation {
+                let char_count = conv.search_query.chars().count();
                 if conv.search_replacing {
                     conv.search_replacing = false;
-                    conv.search_cursor = conv.search_query.len();
-                } else if conv.search_cursor < conv.search_query.len() {
+                    conv.search_cursor = char_count;
+                } else if conv.search_cursor < char_count {
                     conv.search_cursor += 1;
                 }
             }
@@ -334,7 +336,8 @@ fn handle_conversation_search(app: &mut App, key: KeyEvent) -> Action {
                     conv.search_cursor = 0;
                     conv.search_replacing = false;
                 }
-                conv.search_query.insert(conv.search_cursor, c);
+                let byte_idx = char_to_byte_index(&conv.search_query, conv.search_cursor);
+                conv.search_query.insert(byte_idx, c);
                 conv.search_cursor += 1;
                 conv.rendered_width = 0;
             }
@@ -372,4 +375,12 @@ fn jump_to_prev_match(app: &mut App) {
             .saturating_sub(conv.page_height / 2)
             .min(max);
     }
+}
+
+/// Convert a char index to a byte index in a string.
+fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
+    s.char_indices()
+        .nth(char_idx)
+        .map(|(byte_pos, _)| byte_pos)
+        .unwrap_or(s.len())
 }

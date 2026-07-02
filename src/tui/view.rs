@@ -381,9 +381,14 @@ fn render_conversation_status(frame: &mut Frame, app: &App, area: Rect) {
                     Style::default().fg(Color::Black).bg(app.theme.status_label_bg),
                 ));
             } else {
-                // Show query with block cursor at position
-                let cursor_pos = conv.search_cursor.min(conv.search_query.len());
-                let (before, rest) = conv.search_query.split_at(cursor_pos);
+                // Show query with block cursor at position (char-based cursor)
+                let char_count = conv.search_query.chars().count();
+                let cursor_char = conv.search_cursor.min(char_count);
+                let byte_pos = conv.search_query.char_indices()
+                    .nth(cursor_char)
+                    .map(|(i, _)| i)
+                    .unwrap_or(conv.search_query.len());
+                let (before, rest) = conv.search_query.split_at(byte_pos);
                 if !before.is_empty() {
                     spans.push(Span::styled(before, Style::default().fg(Color::White)));
                 }
@@ -1011,6 +1016,7 @@ fn split_urls(text: &str, base_style: Style, link_style: Style) -> Vec<(String, 
 }
 
 /// Split text into spans, highlighting portions that match any search terms.
+/// Uses char-based indexing to handle multi-byte UTF-8 safely.
 fn highlight_terms<'a>(
     text: &str,
     terms: &[&str],
@@ -1021,22 +1027,26 @@ fn highlight_terms<'a>(
         return vec![Span::styled(text.to_string(), base_style)];
     }
 
-    let text_lower = text.to_lowercase();
-    let len = text.len();
+    let chars: Vec<char> = text.chars().collect();
+    let chars_lower: Vec<char> = text.to_lowercase().chars().collect();
+    let len = chars.len();
 
     let mut matched = vec![false; len];
     for term in terms {
         if term.is_empty() {
             continue;
         }
-        let term_lower = term.to_lowercase();
-        let mut start = 0;
-        while let Some(pos) = text_lower[start..].find(&term_lower) {
-            let abs_pos = start + pos;
-            for m in matched.iter_mut().skip(abs_pos).take(term_lower.len()) {
-                *m = true;
+        let term_chars: Vec<char> = term.to_lowercase().chars().collect();
+        let term_len = term_chars.len();
+        if term_len > len {
+            continue;
+        }
+        for start in 0..=len - term_len {
+            if chars_lower[start..start + term_len] == term_chars[..] {
+                for m in matched.iter_mut().skip(start).take(term_len) {
+                    *m = true;
+                }
             }
-            start = abs_pos + 1;
         }
     }
 
@@ -1049,13 +1059,13 @@ fn highlight_terms<'a>(
         while i < len && matched[i] == is_match {
             i += 1;
         }
-        let segment = &text[run_start..i];
+        let segment: String = chars[run_start..i].iter().collect();
         let style = if is_match {
             highlight_style
         } else {
             base_style
         };
-        spans.push(Span::styled(segment.to_string(), style));
+        spans.push(Span::styled(segment, style));
     }
 
     if spans.is_empty() {
