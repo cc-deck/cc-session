@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientatio
 use crate::session::{ConversationMessage, MessageRole};
 
 use super::table;
-use super::{App, ContentSearchState, Mode};
+use super::{App, ContentSearchState, DisplayItem, Mode};
 
 /// Render the full TUI frame.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -38,71 +38,158 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
     let term_refs: Vec<&str> = terms.iter().map(|s| s.as_str()).collect();
 
     let start = app.scroll_offset;
-    let end = (start + visible_items).min(app.display_entries.len());
+    let end = (start + visible_items).min(app.display_items.len());
 
     for i in start..end {
-        let entry = &app.display_entries[i];
-        let session = app.display_session(entry);
+        let item = &app.display_items[i];
         let is_selected = i == app.selected;
 
-        let delta = Utc::now().signed_duration_since(session.timestamp);
-        let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
-        let right = format!("{}  {}", session.project_name, time_ago);
-        let right_len = right.len();
+        match item {
+            DisplayItem::Session(entry) => {
+                let session = app.display_session(entry);
 
-        let (cursor, cursor_len) = if is_selected {
-            ("\u{27A4} ", 2)
-        } else {
-            ("  ", 2)
-        };
+                let delta = Utc::now().signed_duration_since(session.timestamp);
+                let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
+                let right = if app.grouped_mode {
+                    time_ago.clone()
+                } else {
+                    format!("{}  {}", session.project_name, time_ago)
+                };
+                let right_len = right.len();
 
-        let max_msg_len = width.saturating_sub(cursor_len + right_len + 2);
-        let msg = truncate_str(&session.first_message, max_msg_len);
-        let msg_len = msg.chars().count();
-        let pad = width.saturating_sub(cursor_len + msg_len + right_len);
-        let padding = " ".repeat(pad);
+                // In grouped mode, indent session rows under their header
+                let (cursor, cursor_len) = if app.grouped_mode {
+                    if is_selected {
+                        ("    \u{27A4} ", 6)
+                    } else {
+                        ("      ", 6)
+                    }
+                } else if is_selected {
+                    ("\u{27A4} ", 2)
+                } else {
+                    ("  ", 2)
+                };
 
-        let msg_style = if is_selected {
-            Style::default().fg(Color::White)
-        } else {
-            Style::default().fg(app.theme.text)
-        };
+                let max_msg_len = width.saturating_sub(cursor_len + right_len + 2);
+                let msg = truncate_str(&session.first_message, max_msg_len);
+                let msg_len = msg.chars().count();
+                let pad = width.saturating_sub(cursor_len + msg_len + right_len);
+                let padding = " ".repeat(pad);
 
-        let dim = Style::default().fg(app.theme.text_dim);
+                let msg_style = if is_selected {
+                    Style::default().fg(Color::White)
+                } else {
+                    Style::default().fg(app.theme.text)
+                };
 
-        let cursor_style = Style::default().fg(app.theme.cursor_color);
+                let dim = Style::default().fg(app.theme.text_dim);
+                let cursor_style = Style::default().fg(app.theme.cursor_color);
 
-        let mut spans = vec![Span::styled(cursor, cursor_style)];
-        spans.extend(highlight_terms(&msg, &term_refs, msg_style, &app.theme));
-        spans.push(Span::raw(padding));
-        spans.push(Span::styled(right, dim));
+                let mut spans = vec![Span::styled(cursor, cursor_style)];
+                spans.extend(highlight_terms(&msg, &term_refs, msg_style, &app.theme));
+                spans.push(Span::raw(padding));
+                spans.push(Span::styled(right, dim));
 
-        let line = Line::from(spans);
+                let line = Line::from(spans);
 
-        if is_selected {
-            lines.push(line.patch_style(Style::default().bg(app.theme.selected_bg)));
-        } else {
-            lines.push(line);
+                if is_selected {
+                    lines.push(line.patch_style(Style::default().bg(app.theme.selected_bg)));
+                } else {
+                    lines.push(line);
+                }
+            }
+            DisplayItem::Header(group) => {
+                let is_expanded = if !app.filter_query.is_empty() {
+                    true
+                } else {
+                    app.expanded_projects.contains(&group.project_name)
+                };
+                let chevron = if is_expanded {
+                    "\u{25BC}" // ▼ down-pointing (expanded)
+                } else {
+                    "\u{25B6}" // ▶ right-pointing (collapsed)
+                };
+
+                let delta = Utc::now().signed_duration_since(group.latest_timestamp);
+                let time_ago = HumanTime::from(-delta).to_text_en(Accuracy::Rough, Tense::Past);
+                let count_str = format!("({})", group.session_count);
+                let right = format!("{}  {}", count_str, time_ago);
+                let right_len = right.len();
+
+                let (cursor, cursor_len) = if is_selected {
+                    ("\u{27A4} ", 2)
+                } else {
+                    ("  ", 2)
+                };
+
+                let chevron_and_name = format!("{} {}", chevron, group.project_name);
+                let left_len = cursor_len + chevron_and_name.chars().count();
+                let pad = width.saturating_sub(left_len + right_len);
+                let padding = " ".repeat(pad);
+
+                let header_style = if is_selected {
+                    Style::default().fg(Color::White).bold()
+                } else {
+                    Style::default().fg(app.theme.text).bold()
+                };
+
+                let dim = Style::default().fg(app.theme.text_dim);
+                let cursor_style = Style::default().fg(app.theme.cursor_color);
+
+                let spans = vec![
+                    Span::styled(cursor, cursor_style),
+                    Span::styled(chevron_and_name, header_style),
+                    Span::raw(padding),
+                    Span::styled(right, dim),
+                ];
+
+                let line = Line::from(spans);
+
+                if is_selected {
+                    lines.push(line.patch_style(Style::default().bg(app.theme.selected_bg)));
+                } else {
+                    lines.push(line);
+                }
+            }
         }
     }
 
     let text = Text::from(lines);
     let border_style = Style::default().fg(app.theme.text_dim);
+
+    // Count sessions for display (excluding headers)
+    let session_count = app.display_items.iter().filter(|item| matches!(item, DisplayItem::Session(_))).count();
+
+    let title = if app.grouped_mode {
+        let total_projects = app.sessions.iter().map(|s| &s.project_name).collect::<std::collections::HashSet<_>>().len();
+        let visible_projects = app.display_items.iter().filter(|item| matches!(item, DisplayItem::Header(_))).count();
+        if app.filter_query.is_empty() {
+            format!(" cc-session ({} projects, {}) ", total_projects, app.sessions.len())
+        } else {
+            format!(
+                " cc-session ({}/{} projects, {}/{}) ",
+                visible_projects, total_projects, session_count, app.sessions.len()
+            )
+        }
+    } else {
+        format!(
+            " cc-session ({}/{}) ",
+            session_count,
+            app.sessions.len()
+        )
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(format!(
-            " cc-session ({}/{}) ",
-            app.display_entries.len(),
-            app.sessions.len()
-        ))
+        .title(title)
         .title_style(Style::default().fg(app.theme.cursor_color).bold());
 
     let paragraph = Paragraph::new(text).block(block);
     frame.render_widget(paragraph, area);
 
     // Render vertical scrollbar
-    let total = app.display_entries.len();
+    let total = app.display_items.len();
     let visible = area.height.saturating_sub(2) as usize;
     if total > visible {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -702,7 +789,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 )])
             } else if app.filter_active || !app.filter_query.is_empty() {
                 // Filter active: show filter text with match count
-                let match_count = app.display_entries.len();
+                let match_count = app.display_items.iter().filter(|item| matches!(item, DisplayItem::Session(_))).count();
                 let match_info = if match_count == 0 {
                     " no matches".to_string()
                 } else {
@@ -737,6 +824,9 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Line::from(vec![
                     Span::styled(" Enter ", dim),
                     Span::styled("detail", dim),
+                    Span::raw("  "),
+                    Span::styled("^T ", dim),
+                    Span::styled("group", dim),
                     Span::raw("  "),
                     Span::styled("Esc ", dim),
                     Span::styled("quit", dim),

@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{Action, App, ContentSearchState, Mode};
+use super::{Action, App, ContentSearchState, DisplayItem, Mode};
 
 /// Handle a key event and return the resulting action.
 pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
@@ -20,6 +20,16 @@ pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
+    // Ctrl-T toggles grouped/flat view mode
+    if key.code == KeyCode::Char('t') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.grouped_mode = !app.grouped_mode;
+        app.expanded_projects.clear();
+        app.rebuild_display_items();
+        app.selected = 0;
+        app.scroll_offset = 0;
+        return Action::Continue;
+    }
+
     match key.code {
         KeyCode::Esc => {
             if !app.filter_query.is_empty() || app.filter_active {
@@ -27,6 +37,10 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
                 app.cancel_content_search();
                 app.filter_query.clear();
                 app.filter_active = false;
+                // In grouped mode, clear expanded projects so all groups collapse
+                if app.grouped_mode {
+                    app.expanded_projects.clear();
+                }
                 app.apply_filter();
                 Action::Continue
             } else {
@@ -35,8 +49,23 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
             }
         }
         KeyCode::Enter => {
-            if app.selected < app.display_entries.len() {
-                Action::EnterConversation(app.selected)
+            if app.selected < app.display_items.len() {
+                match &app.display_items[app.selected] {
+                    DisplayItem::Header(group) => {
+                        // Toggle expand/collapse for this project group
+                        let name = group.project_name.clone();
+                        if app.expanded_projects.contains(&name) {
+                            app.expanded_projects.remove(&name);
+                        } else {
+                            app.expanded_projects.insert(name);
+                        }
+                        app.rebuild_display_items();
+                        Action::Continue
+                    }
+                    DisplayItem::Session(_) => {
+                        Action::EnterConversation(app.selected)
+                    }
+                }
             } else {
                 Action::Continue
             }
@@ -69,8 +98,8 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
             Action::Continue
         }
         KeyCode::End => {
-            if !app.display_entries.is_empty() {
-                app.selected = app.display_entries.len() - 1;
+            if !app.display_items.is_empty() {
+                app.selected = app.display_items.len() - 1;
             }
             Action::Continue
         }
@@ -83,6 +112,10 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
                 if app.filter_query.is_empty() {
                     app.content_search_state = ContentSearchState::Idle;
                     app.last_keystroke = None;
+                    // In grouped mode, clear expanded projects so all groups collapse
+                    if app.grouped_mode {
+                        app.expanded_projects.clear();
+                    }
                 } else {
                     app.content_search_state = ContentSearchState::Debouncing;
                     app.last_keystroke = Some(Instant::now());

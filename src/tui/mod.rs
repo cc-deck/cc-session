@@ -68,6 +68,21 @@ pub struct DisplayEntry {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A project group header in the grouped view.
+#[derive(Debug, Clone)]
+pub struct ProjectGroup {
+    pub project_name: String,
+    pub latest_timestamp: DateTime<Utc>,
+    pub session_count: usize,
+}
+
+/// An item in the display list: either a session entry or a project group header.
+#[derive(Debug, Clone)]
+pub enum DisplayItem {
+    Session(DisplayEntry),
+    Header(ProjectGroup),
+}
+
 /// What the input handler tells the main loop to do.
 pub enum Action {
     Continue,
@@ -102,7 +117,7 @@ pub struct ConversationState {
 pub struct App {
     pub sessions: Vec<Session>,
     pub filtered_indices: Vec<usize>,
-    pub display_entries: Vec<DisplayEntry>,
+    pub display_items: Vec<DisplayItem>,
     pub selected: usize,
     pub scroll_offset: usize,
     pub mode: Mode,
@@ -129,23 +144,27 @@ pub struct App {
     pub theme: Theme,
     /// Syntax highlighter for code blocks.
     pub syntax_highlighter: syntax::SyntaxHighlighter,
+    /// Whether the grouped (by project) view is active.
+    pub grouped_mode: bool,
+    /// Set of project names whose groups are currently expanded.
+    pub expanded_projects: HashSet<String>,
 }
 
 impl App {
     pub fn new(sessions: Vec<Session>, session_index: HashMap<PathBuf, Session>, theme: Theme) -> Self {
         let filtered_indices: Vec<usize> = (0..sessions.len()).collect();
-        let display_entries: Vec<DisplayEntry> = filtered_indices
+        let display_items: Vec<DisplayItem> = filtered_indices
             .iter()
-            .map(|&idx| DisplayEntry {
+            .map(|&idx| DisplayItem::Session(DisplayEntry {
                 match_type: MatchType::Metadata,
                 source: DisplaySource::Sessions(idx),
                 timestamp: sessions[idx].timestamp,
-            })
+            }))
             .collect();
         Self {
             sessions,
             filtered_indices,
-            display_entries,
+            display_items,
             selected: 0,
             scroll_offset: 0,
             mode: Mode::Browsing,
@@ -162,19 +181,27 @@ impl App {
             session_index: Arc::new(session_index),
             theme,
             syntax_highlighter: syntax::SyntaxHighlighter::new(),
+            grouped_mode: false,
+            expanded_projects: HashSet::new(),
         }
     }
 
-    /// Re-run the metadata filter and rebuild display entries.
+    /// Re-run the metadata filter and rebuild display items.
     pub fn apply_filter(&mut self) {
         self.filtered_indices = filter_sessions(&self.sessions, &self.filter_query);
-        self.rebuild_display_entries();
+        self.rebuild_display_items();
         self.selected = 0;
         self.scroll_offset = 0;
     }
 
-    /// Build merged display entries from metadata matches and content results.
-    pub fn rebuild_display_entries(&mut self) {
+    /// Build merged display items from metadata matches and content results.
+    ///
+    /// In flat mode: wraps each DisplayEntry in DisplayItem::Session (existing behavior).
+    /// In grouped mode: groups by project_name, sorts groups by latest timestamp,
+    /// emits Header + Session items respecting expanded_projects state.
+    /// When filter_query is non-empty in grouped mode, auto-expands matching groups
+    /// and hides empty groups (bypasses expanded_projects set).
+    pub fn rebuild_display_items(&mut self) {
         let content_ids: HashSet<&str> = self
             .content_results
             .iter()
@@ -213,11 +240,68 @@ impl App {
         }
 
         entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        self.display_entries = entries;
+
+        if !self.grouped_mode {
+            // Flat mode: wrap each entry
+            self.display_items = entries.into_iter().map(DisplayItem::Session).collect();
+        } else {
+            // Grouped mode: group by project_name
+            let mut groups: HashMap<String, Vec<DisplayEntry>> = HashMap::new();
+            for entry in entries {
+                let session = self.display_session_from_entry(&entry);
+                let project = session.project_name.clone();
+                groups.entry(project).or_default().push(entry);
+            }
+
+            // Build sorted group list (by latest timestamp descending)
+            let mut group_list: Vec<(ProjectGroup, Vec<DisplayEntry>)> = groups
+                .into_iter()
+                .map(|(name, sessions)| {
+                    let latest = sessions.iter().map(|e| e.timestamp).max().unwrap_or_default();
+                    let count = sessions.len();
+                    (
+                        ProjectGroup {
+                            project_name: name,
+                            latest_timestamp: latest,
+                            session_count: count,
+                        },
+                        sessions,
+                    )
+                })
+                .collect();
+            group_list.sort_by(|a, b| b.0.latest_timestamp.cmp(&a.0.latest_timestamp));
+
+            let has_filter = !self.filter_query.is_empty();
+            let mut items = Vec::new();
+
+            for (group, sessions) in group_list {
+                // When filter is active, auto-expand all matching groups
+                // When no filter, respect expanded_projects set
+                let is_expanded = if has_filter {
+                    true // auto-expand when filtering
+                } else {
+                    self.expanded_projects.contains(&group.project_name)
+                };
+
+                items.push(DisplayItem::Header(group));
+                if is_expanded {
+                    for session in sessions {
+                        items.push(DisplayItem::Session(session));
+                    }
+                }
+            }
+
+            self.display_items = items;
+        }
     }
 
     /// Get the session referenced by a display entry.
     pub fn display_session(&self, entry: &DisplayEntry) -> &Session {
+        self.display_session_from_entry(entry)
+    }
+
+    /// Get the session referenced by a display entry (internal helper).
+    fn display_session_from_entry(&self, entry: &DisplayEntry) -> &Session {
         match &entry.source {
             DisplaySource::Sessions(idx) => &self.sessions[*idx],
             DisplaySource::Content(idx) => &self.content_results[*idx],
@@ -235,8 +319,8 @@ impl App {
 
     /// Move the selection cursor down, clamped to bounds.
     pub fn move_down(&mut self) {
-        if !self.display_entries.is_empty() {
-            self.selected = (self.selected + 1).min(self.display_entries.len() - 1);
+        if !self.display_items.is_empty() {
+            self.selected = (self.selected + 1).min(self.display_items.len() - 1);
         }
     }
 
@@ -260,12 +344,15 @@ impl App {
         }
     }
 
-    /// Enter conversation viewer for a display entry.
+    /// Enter conversation viewer for a display item.
     pub fn enter_conversation(&mut self, display_idx: usize) {
-        if display_idx >= self.display_entries.len() {
+        if display_idx >= self.display_items.len() {
             return;
         }
-        let entry = &self.display_entries[display_idx];
+        let entry = match &self.display_items[display_idx] {
+            DisplayItem::Session(entry) => entry,
+            DisplayItem::Header(_) => return, // Cannot enter conversation on a header
+        };
         let session = self.display_session(entry).clone();
         let claude_home = get_claude_home();
         let messages = load_conversation(&claude_home, &session);
@@ -319,19 +406,25 @@ impl App {
                 Ok(results) => {
                     self.search_receiver = None;
                     let selected_id = self
-                        .display_entries
+                        .display_items
                         .get(self.selected)
-                        .map(|e| self.display_session(e).id.clone());
+                        .and_then(|item| match item {
+                            DisplayItem::Session(e) => Some(self.display_session(e).id.clone()),
+                            DisplayItem::Header(_) => None,
+                        });
 
                     self.content_results = results;
                     self.content_search_state = ContentSearchState::Complete;
-                    self.rebuild_display_entries();
+                    self.rebuild_display_items();
 
                     if let Some(id) = selected_id {
                         if let Some(pos) = self
-                            .display_entries
+                            .display_items
                             .iter()
-                            .position(|e| self.display_session(e).id == id)
+                            .position(|item| match item {
+                                DisplayItem::Session(e) => self.display_session(e).id == id,
+                                DisplayItem::Header(_) => false,
+                            })
                         {
                             self.selected = pos;
                         }
