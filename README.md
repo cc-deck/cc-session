@@ -19,6 +19,8 @@ cc-session fixes this by scanning all your sessions, presenting them in a search
 - **Theme-aware rendering**: auto-detects dark/light terminal background, with `--dark`/`--light` overrides
 - **Time filters** (`--since 7d`, `--last 50`) to scope results
 - **Cross-platform clipboard** (macOS, Linux X11/Wayland) with stdout fallback
+- **Project grouping**: press `Alt-G` to toggle a grouped view where sessions are organized under collapsible project headers with chevron indicators
+- **Mouse support**: click to select, click again to open sessions or toggle group headers
 - **Markup stripping** removes Claude Code internal tags for clean display
 
 ## Install
@@ -130,7 +132,9 @@ cc-session --since 7d --last 10  # both constraints
 | Type any character | Start filtering (seamless search) |
 | `Backspace` | Delete last filter character |
 | `Left` / `Right` | Move cursor within filter text |
-| `Enter` | Open conversation viewer |
+| `Enter` | Open conversation viewer (on session) / toggle group (on header) |
+| `Alt-G` | Toggle project grouping view |
+| Mouse click | Select item (first click), open/toggle (second click) |
 | `Esc` | Clear filter (first), quit (second) |
 | `Ctrl-C` | Quit |
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.8.0
+
+### What's New
+
+- **Project grouping view**: Press `Alt-G` to toggle a grouped view where sessions are organized under collapsible project headers. Headers show chevron indicators, project name, and most recent session time. All groups start collapsed for a compact overview. Press Enter or click on a header to expand/collapse.
+- **Filter-aware grouping**: When searching in grouped mode, matching groups auto-expand and empty groups hide. Manual collapse during search is supported. Clearing the filter restores all groups to collapsed.
+- **Mouse support**: Click to select items, click again to act (open session or toggle group header).
+- **Border title with project count**: Grouped mode shows project count alongside session count in the border title.
+
+### Bug Fixes
+
+- **UTF-8 panics in search highlighting**: Fixed `highlight_terms` using byte indexing from `to_lowercase()` which could panic with multi-byte Unicode characters. Now uses char-based indexing.
+- **UTF-8 panics in search cursor**: Fixed `search_cursor` tracking character count but `String::remove`/`insert`/`split_at` expecting byte indices. Now converts between char and byte indices correctly.
+- **Content search false positives**: Fixed deep search matching against tool_use/tool_result payloads that are never shown in the conversation viewer.
+
 ## v0.7.9
 
 ### Bug Fixes
