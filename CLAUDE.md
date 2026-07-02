@@ -53,3 +53,8 @@ Keep entries concise. Group by: "What's New" for features/improvements, "Bug Fix
 - Do NOT create GH releases manually (cargo-dist CI creates them)
 - Homebrew tap at cc-deck/tap updates automatically
 - GPG signing can timeout; use `-c commit.gpgsign=false` or `-c tag.gpgsign=false` if needed
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->

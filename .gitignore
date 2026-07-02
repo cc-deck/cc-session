@@ -11,3 +11,9 @@
 # Demo generated files (scripts are tracked, outputs are not)
 demo/demo.cast
 demo/demo.gif
+
+# spex: generated/local files (only constitution is committed)
+**/.claude/
+**/.specify/**
+!**/.specify/memory/
+!**/.specify/memory/constitution.md
