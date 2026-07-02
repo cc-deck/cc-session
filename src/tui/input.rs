@@ -119,6 +119,9 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
                 } else {
                     app.content_search_state = ContentSearchState::Debouncing;
                     app.last_keystroke = Some(Instant::now());
+                    if app.grouped_mode {
+                        app.expanded_projects.clear();
+                    }
                 }
                 app.apply_filter();
             }
@@ -137,6 +140,9 @@ fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
             app.content_results.clear();
             app.content_search_state = ContentSearchState::Debouncing;
             app.last_keystroke = Some(Instant::now());
+            if app.grouped_mode {
+                app.expanded_projects.clear();
+            }
             app.apply_filter();
             Action::Continue
         }

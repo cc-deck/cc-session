@@ -34,6 +34,7 @@ pub struct Theme {
     // Session list
     pub selected_bg: Color,
     pub cursor_color: Color,
+    pub group_header: Color,
     // Syntect theme name
     pub syntect_theme: &'static str,
 }
@@ -63,6 +64,7 @@ impl Theme {
             status_label_fg: Color::Black,
             selected_bg: Color::Rgb(35, 45, 65),
             cursor_color: Color::Cyan,
+            group_header: Color::Green,
             syntect_theme: "base16-eighties.dark",
         }
     }
@@ -91,6 +93,7 @@ impl Theme {
             status_label_fg: Color::White,
             selected_bg: Color::Rgb(210, 220, 240),
             cursor_color: Color::Rgb(0, 130, 150),
+            group_header: Color::Rgb(0, 140, 0),
             syntect_theme: "InspiredGitHub",
         }
     }

@@ -11,7 +11,7 @@ use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use crossterm::event::{self, Event};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -275,10 +275,11 @@ impl App {
             let mut items = Vec::new();
 
             for (group, sessions) in group_list {
-                // When filter is active, auto-expand all matching groups
-                // When no filter, respect expanded_projects set
+                // No filter: expanded_projects = set of expanded groups (default collapsed)
+                // Filter active: auto-expand all, but expanded_projects = set of
+                // manually collapsed groups (inverted semantics during filter)
                 let is_expanded = if has_filter {
-                    true // auto-expand when filtering
+                    !self.expanded_projects.contains(&group.project_name)
                 } else {
                     self.expanded_projects.contains(&group.project_name)
                 };
@@ -498,13 +499,13 @@ pub fn run(
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         let _ = disable_raw_mode();
-        let _ = execute!(stdout(), LeaveAlternateScreen);
+        let _ = execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture);
         original_hook(panic_info);
     }));
 
     enable_raw_mode()?;
     let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -532,35 +533,70 @@ pub fn run(
         })?;
 
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                match handle_input(&mut app, key) {
-                    Action::Quit => break,
-                    Action::EnterConversation(idx) => {
-                        app.enter_conversation(idx);
-                    }
-                    Action::CopyCommand(cmd) => match clipboard::copy_to_clipboard(&cmd) {
-                        Ok(()) => break,
-                        Err(_) => {
+            match event::read()? {
+                Event::Key(key) => {
+                    match handle_input(&mut app, key) {
+                        Action::Quit => break,
+                        Action::EnterConversation(idx) => {
+                            app.enter_conversation(idx);
+                        }
+                        Action::CopyCommand(cmd) => match clipboard::copy_to_clipboard(&cmd) {
+                            Ok(()) => break,
+                            Err(_) => {
+                                deferred_command = Some(cmd);
+                                break;
+                            }
+                        },
+                        Action::ExecCommand { cmd, cwd } => {
                             deferred_command = Some(cmd);
+                            deferred_cwd = Some(cwd);
                             break;
                         }
-                    },
-                    Action::ExecCommand { cmd, cwd } => {
-                        deferred_command = Some(cmd);
-                        deferred_cwd = Some(cwd);
-                        break;
+                        Action::BackToList => {
+                            app.leave_conversation();
+                        }
+                        Action::Continue => {}
                     }
-                    Action::BackToList => {
-                        app.leave_conversation();
-                    }
-                    Action::Continue => {}
                 }
+                Event::Mouse(mouse) => {
+                    if app.mode == Mode::Browsing {
+                        if let MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind {
+                            // Map click row to display item index (row 0 = border, row 1+ = items)
+                            let clicked_row = mouse.row as usize;
+                            if clicked_row >= 1 {
+                                let item_idx = app.scroll_offset + clicked_row - 1;
+                                if item_idx < app.display_items.len() {
+                                    if item_idx == app.selected {
+                                        // Double-click effect: act on selected item
+                                        match &app.display_items[item_idx] {
+                                            DisplayItem::Header(group) => {
+                                                let name = group.project_name.clone();
+                                                if app.expanded_projects.contains(&name) {
+                                                    app.expanded_projects.remove(&name);
+                                                } else {
+                                                    app.expanded_projects.insert(name);
+                                                }
+                                                app.rebuild_display_items();
+                                            }
+                                            DisplayItem::Session(_) => {
+                                                app.enter_conversation(item_idx);
+                                            }
+                                        }
+                                    } else {
+                                        app.selected = item_idx;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     terminal.show_cursor()?;
 
     if let Some(cmd) = deferred_command {

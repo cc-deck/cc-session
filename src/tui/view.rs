@@ -100,7 +100,7 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
             }
             DisplayItem::Header(group) => {
                 let is_expanded = if !app.filter_query.is_empty() {
-                    true
+                    !app.expanded_projects.contains(&group.project_name)
                 } else {
                     app.expanded_projects.contains(&group.project_name)
                 };
@@ -128,9 +128,9 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
                 let padding = " ".repeat(pad);
 
                 let header_style = if is_selected {
-                    Style::default().fg(Color::White).bold()
+                    Style::default().fg(Color::White)
                 } else {
-                    Style::default().fg(app.theme.text).bold()
+                    Style::default().fg(app.theme.group_header)
                 };
 
                 let dim = Style::default().fg(app.theme.text_dim);
