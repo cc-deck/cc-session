@@ -20,8 +20,8 @@ pub fn handle_input(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn handle_browse(app: &mut App, key: KeyEvent) -> Action {
-    // Ctrl-T toggles grouped/flat view mode
-    if key.code == KeyCode::Char('t') && key.modifiers.contains(KeyModifiers::CONTROL) {
+    // Alt-G toggles grouped/flat view mode
+    if key.code == KeyCode::Char('g') && key.modifiers.contains(KeyModifiers::ALT) {
         app.grouped_mode = !app.grouped_mode;
         app.expanded_projects.clear();
         app.rebuild_display_items();

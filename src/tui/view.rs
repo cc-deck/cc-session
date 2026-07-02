@@ -830,7 +830,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled(" Enter ", dim),
                     Span::styled("detail", dim),
                     Span::raw("  "),
-                    Span::styled("^T ", dim),
+                    Span::styled("⌥G ", dim),
                     Span::styled("group", dim),
                     Span::raw("  "),
                     Span::styled("Esc ", dim),
