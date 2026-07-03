@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.1
+
+### What's New
+
+- **Unified search highlighting**: Snippet keywords now use the same yellow background highlight as the metadata filter, eliminating the visual break between search modes.
+
+### Bug Fixes
+
+- **Snippet centering**: Fixed snippets being centered on the wrong position due to a coordinate space mismatch between multiline and collapsed text. Keywords are now always visible in the snippet window regardless of their position in the message.
+- **Render-time re-centering**: Fixed keywords falling outside the visible portion when the 300-char snippet buffer was truncated to terminal width. The visible window now re-centers on the keyword with `...` on both sides.
+
 ## v0.9.0
 
 ### What's New
