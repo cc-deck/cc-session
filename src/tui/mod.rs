@@ -559,15 +559,42 @@ pub fn run(
                     }
                 }
                 Event::Mouse(mouse) => {
-                    if app.mode == Mode::Browsing {
-                        if let MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind {
-                            // Map click row to display item index (row 0 = border, row 1+ = items)
+                    match mouse.kind {
+                        MouseEventKind::ScrollDown => {
+                            match app.mode {
+                                Mode::Browsing => {
+                                    for _ in 0..3 {
+                                        app.move_down();
+                                    }
+                                }
+                                Mode::Conversation | Mode::ConversationSearch => {
+                                    if let Some(conv) = &mut app.conversation {
+                                        let max = conv.lines.len().saturating_sub(conv.page_height);
+                                        conv.scroll_offset = (conv.scroll_offset + 3).min(max);
+                                    }
+                                }
+                            }
+                        }
+                        MouseEventKind::ScrollUp => {
+                            match app.mode {
+                                Mode::Browsing => {
+                                    for _ in 0..3 {
+                                        app.move_up();
+                                    }
+                                }
+                                Mode::Conversation | Mode::ConversationSearch => {
+                                    if let Some(conv) = &mut app.conversation {
+                                        conv.scroll_offset = conv.scroll_offset.saturating_sub(3);
+                                    }
+                                }
+                            }
+                        }
+                        MouseEventKind::Down(crossterm::event::MouseButton::Left) if app.mode == Mode::Browsing => {
                             let clicked_row = mouse.row as usize;
                             if clicked_row >= 1 {
                                 let item_idx = app.scroll_offset + clicked_row - 1;
                                 if item_idx < app.display_items.len() {
                                     if item_idx == app.selected {
-                                        // Double-click effect: act on selected item
                                         match &app.display_items[item_idx] {
                                             DisplayItem::Header(group) => {
                                                 let name = group.project_name.clone();
@@ -588,6 +615,7 @@ pub fn run(
                                 }
                             }
                         }
+                        _ => {}
                     }
                 }
                 _ => {}
