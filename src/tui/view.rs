@@ -93,15 +93,13 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
                 let mut spans = vec![Span::styled(cursor, cursor_style)];
 
                 if let Some(snippet) = snippet {
-                    // Render snippet with keyword highlighting (normal color)
-                    // and surrounding context dimmed
                     let snippet_spans = render_snippet(
                         &snippet.text,
                         &snippet.keyword_ranges,
                         snippet.has_more,
                         max_msg_len,
                         msg_style,
-                        dim,
+                        &app.theme,
                     );
                     let msg_len: usize = snippet_spans
                         .iter()
@@ -1117,9 +1115,11 @@ fn render_snippet<'a>(
     keyword_ranges: &[(usize, usize)],
     has_more: bool,
     max_len: usize,
-    keyword_style: Style,
-    dim_style: Style,
+    base_style: Style,
+    theme: &crate::theme::Theme,
 ) -> Vec<Span<'a>> {
+    let highlight_style = base_style.bg(theme.search_highlight_bg);
+    let dim_style = Style::default().fg(theme.text_dim);
     let chars: Vec<char> = text.chars().collect();
     let total = chars.len();
 
@@ -1187,7 +1187,7 @@ fn render_snippet<'a>(
             pos += 1;
         }
         let segment: String = chars[view_start + run_start..view_start + pos].iter().collect();
-        let style = if is_kw { keyword_style } else { dim_style };
+        let style = if is_kw { highlight_style } else { base_style };
         spans.push(Span::styled(segment, style));
     }
 
@@ -1224,14 +1224,18 @@ fn format_project_label(session: &crate::session::Session) -> String {
 mod tests {
     use super::*;
 
+    fn test_theme() -> crate::theme::Theme {
+        crate::theme::Theme::dark()
+    }
+
     #[test]
     fn test_render_snippet_has_more_shows_plus() {
         let text = "context before kubernetes context after";
-        let keyword_ranges = vec![(15, 25)]; // "kubernetes"
-        let keyword_style = Style::default().fg(Color::White);
-        let dim_style = Style::default().fg(Color::DarkGray);
+        let keyword_ranges = vec![(15, 25)];
+        let base_style = Style::default().fg(Color::White);
+        let theme = test_theme();
 
-        let spans = render_snippet(text, &keyword_ranges, true, 80, keyword_style, dim_style);
+        let spans = render_snippet(text, &keyword_ranges, true, 80, base_style, &theme);
         let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
             full_text.ends_with('+'),
@@ -1243,11 +1247,11 @@ mod tests {
     #[test]
     fn test_render_snippet_no_more_no_indicator() {
         let text = "context before kubernetes context after";
-        let keyword_ranges = vec![(15, 25)]; // "kubernetes"
-        let keyword_style = Style::default().fg(Color::White);
-        let dim_style = Style::default().fg(Color::DarkGray);
+        let keyword_ranges = vec![(15, 25)];
+        let base_style = Style::default().fg(Color::White);
+        let theme = test_theme();
 
-        let spans = render_snippet(text, &keyword_ranges, false, 80, keyword_style, dim_style);
+        let spans = render_snippet(text, &keyword_ranges, false, 80, base_style, &theme);
         let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
             !full_text.ends_with('+'),
@@ -1259,19 +1263,20 @@ mod tests {
     #[test]
     fn test_render_snippet_keyword_highlighted() {
         let text = "hello kubernetes world";
-        let keyword_ranges = vec![(6, 16)]; // "kubernetes"
-        let keyword_style = Style::default().fg(Color::White);
-        let dim_style = Style::default().fg(Color::DarkGray);
+        let keyword_ranges = vec![(6, 16)];
+        let base_style = Style::default().fg(Color::White);
+        let theme = test_theme();
 
-        let spans = render_snippet(text, &keyword_ranges, false, 80, keyword_style, dim_style);
+        let spans = render_snippet(text, &keyword_ranges, false, 80, base_style, &theme);
 
-        // There should be at least 3 spans: "hello " (dim), "kubernetes" (keyword), " world" (dim)
+        // 3 spans: "hello " (base), "kubernetes" (highlighted), " world" (base)
         assert!(spans.len() >= 3, "Should have at least 3 spans: got {}", spans.len());
 
-        // First span should be dimmed
-        assert_eq!(spans[0].style.fg, Some(Color::DarkGray));
-        // Second span should be keyword style
-        assert_eq!(spans[1].style.fg, Some(Color::White));
+        // First span should be base style (normal text)
+        assert_eq!(spans[0].style.fg, Some(Color::White));
+        assert_eq!(spans[0].style.bg, None);
+        // Second span should have highlight background
+        assert_eq!(spans[1].style.bg, Some(theme.search_highlight_bg));
         assert_eq!(spans[1].content.as_ref(), "kubernetes");
     }
 
@@ -1279,10 +1284,10 @@ mod tests {
     fn test_render_snippet_truncation_with_ellipsis() {
         let text = "this is a very long snippet that exceeds the maximum length";
         let keyword_ranges = vec![];
-        let keyword_style = Style::default().fg(Color::White);
-        let dim_style = Style::default().fg(Color::DarkGray);
+        let base_style = Style::default().fg(Color::White);
+        let theme = test_theme();
 
-        let spans = render_snippet(text, &keyword_ranges, false, 20, keyword_style, dim_style);
+        let spans = render_snippet(text, &keyword_ranges, false, 20, base_style, &theme);
         let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
             full_text.ends_with("..."),
