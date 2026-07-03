@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.0
+
+### What's New
+
+- **Search context preview**: Content search results now show a keyword-centered context snippet instead of the session's first message. The keyword appears in normal text color with surrounding context dimmed, making it immediately clear why each session matched. A `+` indicator signals when additional matches exist in the session.
+- **Multi-keyword cluster centering**: When searching for multiple keywords, the snippet centers on the passage where keywords appear closest together (densest cluster), giving the most relevant preview.
+- **Simplified metadata filter**: The as-you-type filter now matches only against the session's first message. Project name and git branch are no longer searched, eliminating false positives where sessions appeared without any visible match reason. Use the grouped view (`Alt-G`) for project-level filtering.
+
 ## v0.8.0
 
 ### What's New
