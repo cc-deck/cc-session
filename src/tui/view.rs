@@ -1132,40 +1132,66 @@ fn render_snippet<'a>(
         max_len
     };
 
-    // Determine if truncation is needed
-    let (display_chars, needs_ellipsis) = if total > effective_max && effective_max > 3 {
-        (effective_max - 3, true)
+    // When the snippet is wider than the display, re-center the visible
+    // window on the first keyword so it's always visible after truncation.
+    let needs_truncation = total > effective_max && effective_max > 3;
+    let (view_start, view_len, left_ellipsis, right_ellipsis) = if needs_truncation {
+        let usable = effective_max - 3; // reserve space for "..."
+        // Find the center of the first keyword range, or fall back to 0
+        let keyword_center = keyword_ranges
+            .first()
+            .map(|&(s, e)| (s + e) / 2)
+            .unwrap_or(0);
+        let half = usable / 2;
+        let start = keyword_center.saturating_sub(half);
+        let end = (start + usable).min(total);
+        let start = end.saturating_sub(usable);
+        let at_start = start == 0;
+        let at_end = end >= total;
+        // If we're trimming from both sides, steal 3 more chars for leading "..."
+        let (final_start, final_len) = if !at_start && !at_end && usable > 6 {
+            (start + 3, usable - 3)
+        } else {
+            (start, end - start)
+        };
+        (final_start, final_len, !at_start, !at_end)
     } else {
-        (total.min(effective_max), false)
+        (0, total.min(effective_max), false, false)
     };
 
     let mut spans: Vec<Span<'a>> = Vec::new();
-    let mut pos = 0;
 
-    // Build a char-level keyword mask
-    let mut is_keyword = vec![false; display_chars];
+    if left_ellipsis {
+        spans.push(Span::styled("...", dim_style));
+    }
+
+    // Build a char-level keyword mask for the visible window
+    let mut is_keyword_mask = vec![false; view_len];
     for &(start, end) in keyword_ranges {
-        let range_end = end.min(display_chars);
-        if start < range_end {
-            for flag in &mut is_keyword[start..range_end] {
-                *flag = true;
-            }
+        if end <= view_start || start >= view_start + view_len {
+            continue;
+        }
+        let local_start = start.saturating_sub(view_start);
+        let local_end = end.min(view_start + view_len) - view_start;
+        for flag in &mut is_keyword_mask[local_start..local_end] {
+            *flag = true;
         }
     }
 
     // Generate spans by runs of keyword/non-keyword
-    while pos < display_chars {
+    let mut pos = 0;
+    while pos < view_len {
         let run_start = pos;
-        let is_kw = is_keyword[pos];
-        while pos < display_chars && is_keyword[pos] == is_kw {
+        let is_kw = is_keyword_mask[pos];
+        while pos < view_len && is_keyword_mask[pos] == is_kw {
             pos += 1;
         }
-        let segment: String = chars[run_start..pos].iter().collect();
+        let segment: String = chars[view_start + run_start..view_start + pos].iter().collect();
         let style = if is_kw { keyword_style } else { dim_style };
         spans.push(Span::styled(segment, style));
     }
 
-    if needs_ellipsis {
+    if right_ellipsis {
         spans.push(Span::styled("...", dim_style));
     }
 
