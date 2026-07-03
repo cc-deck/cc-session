@@ -425,10 +425,23 @@ fn extract_snippet(cleaned: &str, center_char: usize, regexes: &[Regex]) -> Snip
     let chars: Vec<char> = single_line.chars().collect();
     let total_chars = chars.len();
 
-    // Calculate window boundaries in character space
+    // Remap center_char from cleaned coordinate space to single_line coordinate space
+    // by re-running the regex on single_line to find the actual keyword position
+    let remapped_center = {
+        let mut best_pos = center_char.min(total_chars.saturating_sub(1));
+        if let Some(re) = regexes.first() {
+            if let Some(m) = re.find(&single_line) {
+                best_pos = single_line[..m.start()].chars().count() + (single_line[m.start()..m.end()].chars().count() / 2);
+            }
+        }
+        best_pos
+    };
+
+    // Calculate window boundaries with redistribution for edge cases
     let half = SNIPPET_SIZE / 2;
-    let start_char = center_char.saturating_sub(half);
-    let end_char = (center_char + half).min(total_chars);
+    let start_char = remapped_center.saturating_sub(half);
+    let end_char = (start_char + SNIPPET_SIZE).min(total_chars);
+    let start_char = end_char.saturating_sub(SNIPPET_SIZE);
 
     // Convert char offsets to byte offsets using is_char_boundary
     let snippet_text: String = chars[start_char..end_char].iter().collect();
@@ -785,9 +798,8 @@ mod tests {
 
     #[test]
     fn test_utf8_cjk_characters_in_snippet() {
-        // CJK characters are 3 bytes each in UTF-8
         let file = create_test_jsonl(&[
-            ("user", "Please help with kubernetes deployment"),
+            ("user", "\u{8BF7}\u{5E2E}\u{52A9}\u{6211} kubernetes \u{90E8}\u{7F72}\u{95EE}\u{9898}\u{548C}\u{914D}\u{7F6E}"),
         ]);
 
         let regexes = vec![Regex::new("(?i)kubernetes").unwrap()];
@@ -796,13 +808,13 @@ mod tests {
         assert!(result.is_some(), "Should find match with CJK context");
         let snippet = result.unwrap();
         assert!(!snippet.keyword_ranges.is_empty());
+        assert!(snippet.text.to_lowercase().contains("kubernetes"));
     }
 
     #[test]
     fn test_utf8_accented_characters() {
-        // Accented characters (e.g., e with accent) are 2 bytes in UTF-8
         let file = create_test_jsonl(&[
-            ("user", "deploiement kubernetes avec les parametres speciales"),
+            ("user", "d\u{00E9}ploiement kubernetes avec les param\u{00E8}tres sp\u{00E9}ciales"),
         ]);
 
         let regexes = vec![Regex::new("(?i)kubernetes").unwrap()];
@@ -811,6 +823,20 @@ mod tests {
         assert!(result.is_some());
         let snippet = result.unwrap();
         assert!(snippet.text.to_lowercase().contains("kubernetes"));
+    }
+
+    #[test]
+    fn test_utf8_multibyte_keyword() {
+        let file = create_test_jsonl(&[
+            ("user", "\u{8BF7}\u{5E2E}\u{52A9}\u{6211}\u{90E8}\u{7F72}\u{548C}\u{914D}\u{7F6E}\u{7684}\u{95EE}\u{9898}"),
+        ]);
+
+        let regexes = vec![Regex::new("\u{90E8}\u{7F72}").unwrap()];
+        let result = file_matches_all(file.path(), &regexes);
+
+        assert!(result.is_some(), "Should find CJK keyword match");
+        let snippet = result.unwrap();
+        assert!(!snippet.keyword_ranges.is_empty(), "Should have keyword ranges for CJK keyword");
     }
 
     #[test]
@@ -881,6 +907,7 @@ mod tests {
         assert!(result.is_some());
         let snippet = result.unwrap();
         assert!(snippet.text.starts_with("kubernetes") || snippet.text.to_lowercase().starts_with("kubernetes"));
+        assert_eq!(snippet.keyword_ranges[0].0, 0, "keyword at message start should have range starting at 0");
     }
 
     #[test]
@@ -898,5 +925,27 @@ mod tests {
             snippet.text.to_lowercase().contains("kubernetes"),
             "Should handle keyword at end of message"
         );
+        let last_range = snippet.keyword_ranges.last().unwrap();
+        assert!(last_range.1 <= snippet.text.chars().count(), "keyword range should not exceed snippet length");
+    }
+
+    #[test]
+    fn test_cross_message_keywords_returns_none() {
+        // Keywords split across different messages: "rust" in msg1, "async" in msg2
+        // Each message is scored independently, so no single message has both
+        let file = create_test_jsonl(&[
+            ("user", "I love rust programming"),
+            ("assistant", "Let me help with async patterns"),
+        ]);
+
+        let regexes = vec![
+            Regex::new("(?i)rust").unwrap(),
+            Regex::new("(?i)async").unwrap(),
+        ];
+        let result = file_matches_all(file.path(), &regexes);
+
+        // Both keywords match globally, but no single message contains both,
+        // so best_cluster is None and the function returns None
+        assert!(result.is_none(), "Should return None when keywords are in separate messages");
     }
 }
