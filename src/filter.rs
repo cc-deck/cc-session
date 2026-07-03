@@ -54,11 +54,14 @@ pub fn parse_keywords(query: &str) -> Vec<String> {
 }
 
 /// Filter sessions by requiring all keywords to appear as case-insensitive
-/// substrings in "{project_name} {git_branch} {first_message}".
+/// substrings in `first_message` only.
 ///
 /// Keywords are split on whitespace; quoted phrases are kept as single terms.
 /// All keywords must match (AND logic).
 /// Returns matching indices in original order.
+///
+/// Note: This intentionally does NOT match against `project_name` or `git_branch`.
+/// Project-level filtering is handled by the grouped view toggle.
 pub fn filter_sessions(sessions: &[Session], query: &str) -> Vec<usize> {
     let keywords = parse_keywords(query);
     if keywords.is_empty() {
@@ -71,12 +74,7 @@ pub fn filter_sessions(sessions: &[Session], query: &str) -> Vec<usize> {
         .iter()
         .enumerate()
         .filter_map(|(idx, session)| {
-            let branch = session.git_branch.as_deref().unwrap_or("");
-            let haystack = format!(
-                "{} {} {}",
-                session.project_name, branch, session.first_message
-            )
-            .to_lowercase();
+            let haystack = session.first_message.to_lowercase();
 
             if keywords_lower.iter().all(|kw| haystack.contains(kw.as_str())) {
                 Some(idx)

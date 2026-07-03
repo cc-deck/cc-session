@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientatio
 use crate::session::{ConversationMessage, MessageRole};
 
 use super::table;
-use super::{App, ContentSearchState, DisplayItem, Mode};
+use super::{App, ContentSearchState, DisplayItem, MatchType, Mode};
 
 /// Render the full TUI frame.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -71,10 +71,6 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
                 };
 
                 let max_msg_len = width.saturating_sub(cursor_len + right_len + 2);
-                let msg = truncate_str(&session.first_message, max_msg_len);
-                let msg_len = msg.chars().count();
-                let pad = width.saturating_sub(cursor_len + msg_len + right_len);
-                let padding = " ".repeat(pad);
 
                 let msg_style = if is_selected {
                     Style::default().fg(Color::White)
@@ -85,9 +81,45 @@ fn render_session_list(frame: &mut Frame, app: &App, area: Rect) {
                 let dim = Style::default().fg(app.theme.text_dim);
                 let cursor_style = Style::default().fg(app.theme.cursor_color);
 
+                // Check if we have a snippet for content matches
+                let snippet = if entry.match_type == MatchType::Content
+                    || entry.match_type == MatchType::Both
+                {
+                    app.snippet_for_entry(entry)
+                } else {
+                    None
+                };
+
                 let mut spans = vec![Span::styled(cursor, cursor_style)];
-                spans.extend(highlight_terms(&msg, &term_refs, msg_style, &app.theme));
-                spans.push(Span::raw(padding));
+
+                if let Some(snippet) = snippet {
+                    // Render snippet with keyword highlighting (normal color)
+                    // and surrounding context dimmed
+                    let snippet_spans = render_snippet(
+                        &snippet.text,
+                        &snippet.keyword_ranges,
+                        snippet.has_more,
+                        max_msg_len,
+                        msg_style,
+                        dim,
+                    );
+                    let msg_len: usize = snippet_spans
+                        .iter()
+                        .map(|s| s.content.chars().count())
+                        .sum();
+                    spans.extend(snippet_spans);
+                    let pad = width.saturating_sub(cursor_len + msg_len + right_len);
+                    let padding = " ".repeat(pad);
+                    spans.push(Span::raw(padding));
+                } else {
+                    let msg = truncate_str(&session.first_message, max_msg_len);
+                    let msg_len = msg.chars().count();
+                    let pad = width.saturating_sub(cursor_len + msg_len + right_len);
+                    let padding = " ".repeat(pad);
+                    spans.extend(highlight_terms(&msg, &term_refs, msg_style, &app.theme));
+                    spans.push(Span::raw(padding));
+                };
+
                 spans.push(Span::styled(right, dim));
 
                 let line = Line::from(spans);
@@ -1075,6 +1107,79 @@ fn highlight_terms<'a>(
     spans
 }
 
+/// Render a search snippet with keyword spans in normal color and context spans dimmed.
+///
+/// Truncates the snippet text to `max_len` characters. Appends a `+` indicator
+/// (in dim style) when `has_more` is true. The `keyword_ranges` are character
+/// offset ranges within the snippet text.
+fn render_snippet<'a>(
+    text: &str,
+    keyword_ranges: &[(usize, usize)],
+    has_more: bool,
+    max_len: usize,
+    keyword_style: Style,
+    dim_style: Style,
+) -> Vec<Span<'a>> {
+    let chars: Vec<char> = text.chars().collect();
+    let total = chars.len();
+
+    // Account for the `+` indicator in the available space
+    let indicator = if has_more { "+" } else { "" };
+    let indicator_len = indicator.len();
+    let effective_max = if max_len > indicator_len + 3 {
+        max_len - indicator_len
+    } else {
+        max_len
+    };
+
+    // Determine if truncation is needed
+    let (display_chars, needs_ellipsis) = if total > effective_max && effective_max > 3 {
+        (effective_max - 3, true)
+    } else {
+        (total.min(effective_max), false)
+    };
+
+    let mut spans: Vec<Span<'a>> = Vec::new();
+    let mut pos = 0;
+
+    // Build a char-level keyword mask
+    let mut is_keyword = vec![false; display_chars];
+    for &(start, end) in keyword_ranges {
+        let range_end = end.min(display_chars);
+        if start < range_end {
+            for flag in &mut is_keyword[start..range_end] {
+                *flag = true;
+            }
+        }
+    }
+
+    // Generate spans by runs of keyword/non-keyword
+    while pos < display_chars {
+        let run_start = pos;
+        let is_kw = is_keyword[pos];
+        while pos < display_chars && is_keyword[pos] == is_kw {
+            pos += 1;
+        }
+        let segment: String = chars[run_start..pos].iter().collect();
+        let style = if is_kw { keyword_style } else { dim_style };
+        spans.push(Span::styled(segment, style));
+    }
+
+    if needs_ellipsis {
+        spans.push(Span::styled("...", dim_style));
+    }
+
+    if has_more && !indicator.is_empty() {
+        spans.push(Span::styled(indicator.to_string(), dim_style));
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::styled(String::new(), dim_style));
+    }
+
+    spans
+}
+
 /// Get the active search terms for highlighting from the app state.
 /// Parses keywords from the filter query (space-separated, quoted phrases preserved).
 fn search_terms(app: &App) -> Vec<String> {
@@ -1086,5 +1191,82 @@ fn format_project_label(session: &crate::session::Session) -> String {
     match &session.git_branch {
         Some(branch) if !branch.is_empty() => format!("{} ({})", session.project_name, branch),
         _ => session.project_name.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_snippet_has_more_shows_plus() {
+        let text = "context before kubernetes context after";
+        let keyword_ranges = vec![(15, 25)]; // "kubernetes"
+        let keyword_style = Style::default().fg(Color::White);
+        let dim_style = Style::default().fg(Color::DarkGray);
+
+        let spans = render_snippet(text, &keyword_ranges, true, 80, keyword_style, dim_style);
+        let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            full_text.ends_with('+'),
+            "has_more=true should render '+' indicator: got '{}'",
+            full_text
+        );
+    }
+
+    #[test]
+    fn test_render_snippet_no_more_no_indicator() {
+        let text = "context before kubernetes context after";
+        let keyword_ranges = vec![(15, 25)]; // "kubernetes"
+        let keyword_style = Style::default().fg(Color::White);
+        let dim_style = Style::default().fg(Color::DarkGray);
+
+        let spans = render_snippet(text, &keyword_ranges, false, 80, keyword_style, dim_style);
+        let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            !full_text.ends_with('+'),
+            "has_more=false should not render '+' indicator: got '{}'",
+            full_text
+        );
+    }
+
+    #[test]
+    fn test_render_snippet_keyword_highlighted() {
+        let text = "hello kubernetes world";
+        let keyword_ranges = vec![(6, 16)]; // "kubernetes"
+        let keyword_style = Style::default().fg(Color::White);
+        let dim_style = Style::default().fg(Color::DarkGray);
+
+        let spans = render_snippet(text, &keyword_ranges, false, 80, keyword_style, dim_style);
+
+        // There should be at least 3 spans: "hello " (dim), "kubernetes" (keyword), " world" (dim)
+        assert!(spans.len() >= 3, "Should have at least 3 spans: got {}", spans.len());
+
+        // First span should be dimmed
+        assert_eq!(spans[0].style.fg, Some(Color::DarkGray));
+        // Second span should be keyword style
+        assert_eq!(spans[1].style.fg, Some(Color::White));
+        assert_eq!(spans[1].content.as_ref(), "kubernetes");
+    }
+
+    #[test]
+    fn test_render_snippet_truncation_with_ellipsis() {
+        let text = "this is a very long snippet that exceeds the maximum length";
+        let keyword_ranges = vec![];
+        let keyword_style = Style::default().fg(Color::White);
+        let dim_style = Style::default().fg(Color::DarkGray);
+
+        let spans = render_snippet(text, &keyword_ranges, false, 20, keyword_style, dim_style);
+        let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            full_text.ends_with("..."),
+            "Should truncate with ellipsis: got '{}'",
+            full_text
+        );
+        assert!(
+            full_text.chars().count() <= 20,
+            "Should not exceed max_len: got {} chars",
+            full_text.chars().count()
+        );
     }
 }

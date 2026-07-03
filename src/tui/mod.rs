@@ -21,7 +21,7 @@ use ratatui::prelude::*;
 use crate::clipboard;
 use crate::discovery::{get_claude_home, load_conversation};
 use crate::filter::filter_sessions;
-use crate::search;
+use crate::search::{self, SearchResult};
 use crate::session::{ConversationMessage, Session};
 use crate::theme::Theme;
 
@@ -127,7 +127,7 @@ pub struct App {
     pub status_message: Option<(String, Instant)>,
     pub conversation: Option<ConversationState>,
     /// Content-only search results from background search.
-    pub content_results: Vec<Session>,
+    pub content_results: Vec<SearchResult>,
     /// Current phase of content search.
     pub content_search_state: ContentSearchState,
     /// When the last filter keystroke occurred, for debounce.
@@ -135,7 +135,7 @@ pub struct App {
     /// Flag to cancel in-progress content search.
     pub cancel_flag: Arc<AtomicBool>,
     /// Receiver for background content search results.
-    pub search_receiver: Option<mpsc::Receiver<Vec<Session>>>,
+    pub search_receiver: Option<mpsc::Receiver<Vec<SearchResult>>>,
     /// Spinner frame counter.
     pub spinner_tick: usize,
     /// Pre-built file-path-to-session index for fast content search.
@@ -205,7 +205,7 @@ impl App {
         let content_ids: HashSet<&str> = self
             .content_results
             .iter()
-            .map(|s| s.id.as_str())
+            .map(|r| r.session.id.as_str())
             .collect();
         let metadata_ids: HashSet<&str> = self
             .filtered_indices
@@ -229,12 +229,12 @@ impl App {
             });
         }
 
-        for (i, session) in self.content_results.iter().enumerate() {
-            if !metadata_ids.contains(session.id.as_str()) {
+        for (i, result) in self.content_results.iter().enumerate() {
+            if !metadata_ids.contains(result.session.id.as_str()) {
                 entries.push(DisplayEntry {
                     match_type: MatchType::Content,
                     source: DisplaySource::Content(i),
-                    timestamp: session.timestamp,
+                    timestamp: result.session.timestamp,
                 });
             }
         }
@@ -305,7 +305,27 @@ impl App {
     fn display_session_from_entry(&self, entry: &DisplayEntry) -> &Session {
         match &entry.source {
             DisplaySource::Sessions(idx) => &self.sessions[*idx],
-            DisplaySource::Content(idx) => &self.content_results[*idx],
+            DisplaySource::Content(idx) => &self.content_results[*idx].session,
+        }
+    }
+
+    /// Get the snippet for a content-matched display entry, if available.
+    ///
+    /// Returns `Some(&MatchSnippet)` when the entry came from content search
+    /// (DisplaySource::Content) and the corresponding SearchResult has a snippet.
+    /// Returns `None` for metadata-only matches or when no snippet was extracted.
+    pub fn snippet_for_entry(&self, entry: &DisplayEntry) -> Option<&search::MatchSnippet> {
+        match &entry.source {
+            DisplaySource::Content(idx) => self.content_results[*idx].snippet.as_ref(),
+            DisplaySource::Sessions(idx) => {
+                // For Both matches, the session is in filtered_indices but the snippet
+                // is in content_results. Look up by session ID.
+                let session_id = &self.sessions[*idx].id;
+                self.content_results
+                    .iter()
+                    .find(|r| r.session.id == *session_id)
+                    .and_then(|r| r.snippet.as_ref())
+            }
         }
     }
 
