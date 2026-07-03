@@ -239,9 +239,18 @@ fn file_matches_all(path: &Path, regexes: &[Regex]) -> Option<MatchSnippet> {
 
         let cleaned = clean_message_multiline(&text);
 
+        // Collapse to single line immediately so all positions are in
+        // the same coordinate space used by extract_snippet
+        let single_line: String = cleaned
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+
         // Track global match state (all regexes must match somewhere)
         for (i, re) in regexes.iter().enumerate() {
-            if !matched[i] && re.is_match(&cleaned) {
+            if !matched[i] && re.is_match(&single_line) {
                 matched[i] = true;
             }
         }
@@ -251,10 +260,9 @@ fn file_matches_all(path: &Path, regexes: &[Regex]) -> Option<MatchSnippet> {
         let mut all_found = true;
         for re in regexes {
             let positions: Vec<usize> = re
-                .find_iter(&cleaned)
+                .find_iter(&single_line)
                 .map(|m| {
-                    // Convert byte offset to char offset
-                    cleaned[..m.start()].chars().count()
+                    single_line[..m.start()].chars().count()
                 })
                 .collect();
             if positions.is_empty() {
@@ -266,15 +274,13 @@ fn file_matches_all(path: &Path, regexes: &[Regex]) -> Option<MatchSnippet> {
         if all_found {
             messages_with_all_matches += 1;
 
-            // Find the densest cluster: smallest span covering at least one match of every keyword
-            if let Some(cluster) = find_densest_cluster(&positions_per_regex, regexes, &cleaned) {
+            if let Some(cluster) = find_densest_cluster(&positions_per_regex, regexes, &single_line) {
                 let is_better = match &best_cluster {
                     None => true,
                     Some(best) => {
                         if cluster.span < best.span {
                             true
                         } else if cluster.span == best.span {
-                            // Tie-breaking: prefer user messages, then earlier position
                             is_user && !best.is_user
                         } else {
                             false
@@ -284,7 +290,7 @@ fn file_matches_all(path: &Path, regexes: &[Regex]) -> Option<MatchSnippet> {
 
                 if is_better {
                     best_cluster = Some(ClusterInfo {
-                        cleaned_text: cleaned,
+                        cleaned_text: single_line,
                         center_char: cluster.center_char,
                         span: cluster.span,
                         is_user,
@@ -411,35 +417,19 @@ struct SnippetExtraction {
 ///
 /// Uses `is_char_boundary`-safe slicing. Collapses newlines to single spaces
 /// for single-line display. Computes keyword_ranges relative to the snippet.
-fn extract_snippet(cleaned: &str, center_char: usize, regexes: &[Regex]) -> SnippetExtraction {
+fn extract_snippet(single_line: &str, center_char: usize, regexes: &[Regex]) -> SnippetExtraction {
     const SNIPPET_SIZE: usize = 300;
 
-    // Collapse to single line for display
-    let single_line: String = cleaned
-        .lines()
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-
+    // Input is already collapsed to single line by the caller
     let chars: Vec<char> = single_line.chars().collect();
     let total_chars = chars.len();
 
-    // Remap center_char from cleaned coordinate space to single_line coordinate space
-    // by re-running the regex on single_line to find the actual keyword position
-    let remapped_center = {
-        let mut best_pos = center_char.min(total_chars.saturating_sub(1));
-        if let Some(re) = regexes.first() {
-            if let Some(m) = re.find(&single_line) {
-                best_pos = single_line[..m.start()].chars().count() + (single_line[m.start()..m.end()].chars().count() / 2);
-            }
-        }
-        best_pos
-    };
+    // center_char is already in single_line coordinate space
+    let center = center_char.min(total_chars.saturating_sub(1));
 
     // Calculate window boundaries with redistribution for edge cases
     let half = SNIPPET_SIZE / 2;
-    let start_char = remapped_center.saturating_sub(half);
+    let start_char = center.saturating_sub(half);
     let end_char = (start_char + SNIPPET_SIZE).min(total_chars);
     let start_char = end_char.saturating_sub(SNIPPET_SIZE);
 
